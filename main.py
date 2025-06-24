@@ -19,25 +19,25 @@ MOVIES = {
 }
 
 adding_movie = {}
-broadcast_mode = {}
-users_file = "users.txt"
+broadcasting = {}
+USERS_FILE = "users.txt"
 
-# Yangi foydalanuvchini ro'yxatga olish
 def save_user(user_id):
-    try:
-        if not os.path.exists(users_file):
-            with open(users_file, "w") as f:
-                f.write("")
-        with open(users_file, "r+") as f:
-            ids = f.read().splitlines()
-            if str(user_id) not in ids:
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "w") as f:
+            f.write(f"{user_id}\n")
+    else:
+        with open(USERS_FILE, "r") as f:
+            users = f.read().splitlines()
+        if str(user_id) not in users:
+            with open(USERS_FILE, "a") as f:
                 f.write(f"{user_id}\n")
-    except Exception as e:
-        print(f"Foydalanuvchini saqlashda xatolik: {e}")
 
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    save_user(update.effective_user.id)
+    user_id = str(update.effective_user.id)
+    save_user(user_id)
+
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n🎥 Kino ko‘rish uchun <i>tugmadan tanlang</i> yoki <b>kino kodini yozing</b>:",
         parse_mode="HTML"
@@ -62,32 +62,17 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("🚫 Siz admin emassiz.")
         return
-    keyboard = [["📊 Statistika", "➕ Kino qo‘shish"], ["📤 Xabar yuborish"]]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("👑 Admin panelga xush kelibsiz!", reply_markup=reply_markup)
 
-# Matnli xabarlar uchun handler
+    keyboard = [["📊 Statistika", "➕ Kino qo‘shish"], ["📤 Xabar yuborish"]]
+    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text("👑 Admin panelga xush kelibsiz!", reply_markup=markup)
+
+# Matnli xabarlar
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
-    # Broadcast holati
-    if broadcast_mode.get(user_id):
-        broadcast_mode[user_id] = False
-        try:
-            with open(users_file, "r") as f:
-                ids = f.read().splitlines()
-                for uid in ids:
-                    try:
-                        await context.bot.send_message(chat_id=uid, text=text)
-                    except:
-                        continue
-            await update.message.reply_text("✅ Xabar yuborildi.")
-        except:
-            await update.message.reply_text("⚠️ Xabar yuborishda xatolik.")
-        return
-
-    # Kino qo‘shish holati
+    # Admin kino qo‘shmoqda
     if adding_movie.get(user_id):
         parts = text.split(";")
         if len(parts) == 3:
@@ -99,34 +84,47 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             adding_movie[user_id] = False
             await update.message.reply_text(f"✅ Kino qo‘shildi: {code.strip()} ➡ {title.strip()}")
         else:
-            await update.message.reply_text(
-                "⚠️ Format noto‘g‘ri. To‘g‘ri format: <code>1;file_id;Gladio</code>",
-                parse_mode="HTML"
-            )
+            await update.message.reply_text("⚠️ Format noto‘g‘ri. Format: <code>1;file_id;Gladio</code>", parse_mode="HTML")
         return
 
-    # Admin tugmalar
+    # Admin xabar yubormoqda
+    if broadcasting.get(user_id):
+        broadcasting[user_id] = False
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, "r") as f:
+                users = f.read().splitlines()
+            count = 0
+            for uid in users:
+                try:
+                    await context.bot.send_message(chat_id=uid, text=text)
+                    count += 1
+                except:
+                    pass
+            await update.message.reply_text(f"✅ {count} ta foydalanuvchiga yuborildi.")
+        else:
+            await update.message.reply_text("⚠️ Foydalanuvchilar ro'yxati topilmadi.")
+        return
+
+    # Admin tugmalari
     if user_id == ADMIN_ID:
         if text == "📊 Statistika":
-            count = 0
-            if os.path.exists(users_file):
-                with open(users_file, "r") as f:
-                    count = len(f.read().splitlines())
-            await update.message.reply_text(f"👥 Obunachilar soni: {count}")
+            if os.path.exists(USERS_FILE):
+                with open(USERS_FILE, "r") as f:
+                    users = f.read().splitlines()
+                await update.message.reply_text(f"👥 Obunachilar soni: {len(users)}")
+            else:
+                await update.message.reply_text("👥 Obunachilar soni: 0")
             return
         elif text == "➕ Kino qo‘shish":
             adding_movie[user_id] = True
-            await update.message.reply_text(
-                "📝 Format: <code>kod;file_id;kino_nomi</code>\nMisol: <code>1;BAACAgIA...;Gladio</code>",
-                parse_mode="HTML"
-            )
+            await update.message.reply_text("📝 Format: <code>1;file_id;Gladio</code>", parse_mode="HTML")
             return
         elif text == "📤 Xabar yuborish":
-            broadcast_mode[user_id] = True
+            broadcasting[user_id] = True
             await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni yozing:")
             return
 
-    # Foydalanuvchi kino kodi kiritdi
+    # Kino kodi orqali
     movie = MOVIES.get(text)
     if movie:
         await update.message.reply_video(video=movie["file_id"], caption=f"🎬 {movie['title']}")
@@ -137,17 +135,19 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
-        await update.message.reply_text(f"🎬 Video file_id:\n<code>{file_id}</code>", parse_mode="HTML")
+        await update.message.reply_text(f"🎬 file_id:\n<code>{file_id}</code>", parse_mode="HTML")
     else:
         await update.message.reply_text("❌ Video yuboring.")
 
 # Botni ishga tushirish
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
     print("✅ Bot ishga tushdi...")
     app.run_polling()
