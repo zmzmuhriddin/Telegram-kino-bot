@@ -13,13 +13,13 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 
-# Kino kodi: (file_id, real title)
+# Kino maʼlumotlari: { "1": {"file_id": ..., "title": ...} }
 MOVIES = {
-    "1": ("VIDEO_FILE_ID_1", "Avatar 2"),
-    "2": ("VIDEO_FILE_ID_2", "John Wick 4")
+    "1": {"file_id": "VIDEO_FILE_ID_1", "title": "Avatar 2"},
+    "2": {"file_id": "VIDEO_FILE_ID_2", "title": "John Wick 4"}
 }
 
-# Adminlar qo‘shmoqchi bo‘lgan kino holati
+# Admin holatini kuzatish
 adding_movie = {}
 
 # /start komandasi
@@ -28,23 +28,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n🎥 Kino ko‘rish uchun <i>tugmadan tanlang</i> yoki <b>kino kodini yozing</b>:",
         parse_mode="HTML"
     )
-    buttons = [[InlineKeyboardButton(title, callback_data=title)] for title in MOVIES]
+
+    buttons = [[InlineKeyboardButton(movie["title"], callback_data=code)] for code, movie in MOVIES.items()]
     markup = InlineKeyboardMarkup(buttons)
     await update.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
 
-# Tugmadan kino yuborish
+# Tugma bosilganda
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    title = query.data
-    movie = MOVIES.get(title)
+    code = query.data
+    movie = MOVIES.get(code)
     if movie:
-        file_id, real_title = movie
-        await query.message.reply_video(video=file_id, caption=f"🎬 {real_title}")
+        await query.message.reply_video(video=movie["file_id"], caption=f"🎬 {movie['title']}")
     else:
         await query.message.reply_text("❌ Kino topilmadi.")
 
-# Admin paneli
+# /admin komandasi
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("🚫 Siz admin emassiz.")
@@ -54,24 +54,22 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("👑 Admin panelga xush kelibsiz!", reply_markup=reply_markup)
 
-# Yagona matn handler - admin yoki user
+# Matnli xabarlar uchun handler
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
-    # Admin kino qo‘shayotgan bo‘lsa
+    # Admin kino qo‘shmoqda
     if adding_movie.get(user_id):
-        if ";" in text:
-            key, value = text.split(";", 1)
-            code = key.strip()              # masalan: "1"
-            file_id_and_title = value.strip().split(",", 1)
-            if len(file_id_and_title) == 2:
-                file_id, real_title = file_id_and_title
-                MOVIES[code] = (file_id.strip(), real_title.strip())
-                adding_movie[user_id] = False
-                await update.message.reply_text(f"✅ Kino qo‘shildi: {real_title.strip()} ({code})")
-            else:
-                await update.message.reply_text("⚠️ Format noto‘g‘ri. To‘g‘ri format: <code>1;file_id,Gladio</code>", parse_mode="HTML")
+        parts = text.split(";")
+        if len(parts) == 3:
+            code, file_id, title = parts
+            MOVIES[code.strip()] = {
+                "file_id": file_id.strip(),
+                "title": title.strip()
+            }
+            adding_movie[user_id] = False
+            await update.message.reply_text(f"✅ Kino qo‘shildi: {code.strip()} ➡ {title.strip()}")
         else:
             await update.message.reply_text("⚠️ Format noto‘g‘ri. To‘g‘ri format: <code>1;file_id,Gladio</code>", parse_mode="HTML")
         return
@@ -83,17 +81,19 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif text == "➕ Kino qo‘shish":
             adding_movie[user_id] = True
-            await update.message.reply_text("📝 Yangi kino qo‘shish uchun yozing:\n<code>1;file_id,Gladio</code>", parse_mode="HTML")
+            await update.message.reply_text(
+                "📝 Format: <code>kod;file_id;kino_nomi</code>\nMisol: <code>1;BAACAgIA...;Gladio</code>",
+                parse_mode="HTML"
+            )
             return
         elif text == "📤 Xabar yuborish":
             await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni yozing:")
             return
 
-    # Foydalanuvchi kod kiritgan bo‘lsa
+    # Kino kodi orqali qidirish
     movie = MOVIES.get(text)
     if movie:
-        file_id, real_title = movie
-        await update.message.reply_video(video=file_id, caption=f"🎬 {real_title}")
+        await update.message.reply_video(video=movie["file_id"], caption=f"🎬 {movie['title']}")
     else:
         await update.message.reply_text("❌ Bunday kodli kino topilmadi.")
 
@@ -101,13 +101,14 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
-        await update.message.reply_text(f"🎬 file_id:\n<code>{file_id}</code>", parse_mode="HTML")
+        await update.message.reply_text(f"🎬 Video file_id:\n<code>{file_id}</code>", parse_mode="HTML")
     else:
         await update.message.reply_text("❌ Video yuboring.")
 
 # Botni ishga tushirish
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CallbackQueryHandler(button_handler))
