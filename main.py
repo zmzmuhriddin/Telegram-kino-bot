@@ -12,26 +12,27 @@ nest_asyncio.apply()
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMINS = [admin.strip() for admin in os.getenv("ADMINS", "").split(",")]
+ADMINS = os.getenv("ADMINS", "").split(",")  # Masalan: 123456,987654
 MOVIES_FILE = "movies.json"
 USERS_FILE = "users.txt"
 
-# Fayldan kinolarni yuklash
+# Kinolarni yuklash
 if os.path.exists(MOVIES_FILE):
     with open(MOVIES_FILE, "r") as f:
         MOVIES = json.load(f)
 else:
     MOVIES = {}
 
+# Admin holatlarini saqlash
 adding_movie = {}
 waiting_broadcast = {}
 
-# Kinolarni faylga saqlash
+# Kinoni saqlovchi funksiya
 def save_movies():
     with open(MOVIES_FILE, "w") as f:
         json.dump(MOVIES, f, indent=2)
 
-# Foydalanuvchini saqlash
+# Yangi foydalanuvchini saqlash
 def add_user(user_id):
     if not os.path.exists(USERS_FILE):
         open(USERS_FILE, "w").close()
@@ -43,19 +44,21 @@ def add_user(user_id):
 
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
+    user_id = update.effective_user.id
     add_user(user_id)
 
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n🎥 Kino ko‘rish uchun <i>tugmadan tanlang</i> yoki <b>kino kodini yozing</b>",
         parse_mode="HTML"
     )
-    if MOVIES:
-        buttons = [[InlineKeyboardButton(data['title'], callback_data=code)] for code, data in MOVIES.items()]
-        markup = InlineKeyboardMarkup(buttons)
-        await update.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
-    else:
-        await update.message.reply_text("🚫 Hozircha hech qanday kino mavjud emas.")
+
+    if not MOVIES:
+        await update.message.reply_text("❌ Hozircha kino mavjud emas.")
+        return
+
+    buttons = [[InlineKeyboardButton(data['title'], callback_data=code)] for code, data in MOVIES.items()]
+    markup = InlineKeyboardMarkup(buttons)
+    await update.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
 
 # Tugma bosilganda
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,7 +82,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("👑 Admin panelga xush kelibsiz!", reply_markup=markup)
 
-# Matnli xabarlar uchun
+# Matnli xabarlar
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -89,15 +92,18 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = text.split(";")
         if len(parts) == 3:
             code, file_id, title = parts
-            MOVIES[code.strip()] = {"file_id": file_id.strip(), "title": title.strip()}
+            MOVIES[code.strip()] = {
+                "file_id": file_id.strip(),
+                "title": title.strip()
+            }
             save_movies()
             adding_movie[user_id] = False
-            await update.message.reply_text(f"✅ Qo‘shildi: {code.strip()} ➡ {title.strip()}")
+            await update.message.reply_text(f"✅ Kino qo‘shildi: {code.strip()} ➡ {title.strip()}")
         else:
-            await update.message.reply_text("⚠️ Format noto‘g‘ri. To‘g‘ri format: <code>1;file_id;kino nomi</code>", parse_mode="HTML")
+            await update.message.reply_text("⚠️ Format noto‘g‘ri. To‘g‘ri format: <code>1;file_id;Gladio</code>", parse_mode="HTML")
         return
 
-    # Broadcast holati
+    # Xabar yuborish holati
     if waiting_broadcast.get(user_id):
         with open(USERS_FILE, "r") as f:
             users = f.read().splitlines()
@@ -109,10 +115,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 continue
         waiting_broadcast[user_id] = False
-        await update.message.reply_text(f"✅ Xabar yuborildi! ({count} ta foydalanuvchiga)")
+        await update.message.reply_text(f"✅ {count} ta foydalanuvchiga xabar yuborildi!")
         return
 
-    # Admin buyruqlari
+    # Admin komandalar
     if user_id in ADMINS:
         if text == "📊 Statistika":
             with open(USERS_FILE, "r") as f:
@@ -121,32 +127,29 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif text == "➕ Kino qo‘shish":
             adding_movie[user_id] = True
-            await update.message.reply_text(
-                "📝 Format: <code>kod;file_id;kino_nomi</code>\nMisol: <code>1;BAACAgIA...;Gladio</code>",
-                parse_mode="HTML"
-            )
+            await update.message.reply_text("📝 Format: <code>kod;file_id;kino_nomi</code>", parse_mode="HTML")
             return
         elif text == "📤 Xabar yuborish":
             waiting_broadcast[user_id] = True
-            await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni yozing:")
+            await update.message.reply_text("✉️ Xabar matnini yuboring:")
             return
 
-    # Foydalanuvchi kino kodi kiritgan bo‘lsa
+    # Foydalanuvchi kino kodi yuborgan bo‘lishi mumkin
     movie = MOVIES.get(text)
     if movie:
         await update.message.reply_video(video=movie["file_id"], caption=f"🎬 {movie['title']}")
     else:
         await update.message.reply_text("❌ Bunday kodli kino topilmadi.")
 
-# file_id olish
+# Video yuborilganda file_id olish
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
-        await update.message.reply_text(f"🎬 file_id:\n<code>{file_id}</code>", parse_mode="HTML")
+        await update.message.reply_text(f"🎬 Video file_id:\n<code>{file_id}</code>", parse_mode="HTML")
     else:
-        await update.message.reply_text("❌ Iltimos, video yuboring.")
+        await update.message.reply_text("❌ Video yuboring.")
 
-# Ishga tushirish
+# Botni ishga tushirish
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -154,5 +157,6 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
     print("✅ Bot ishga tushdi...")
     app.run_polling()
