@@ -84,3 +84,16 @@ async def main():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
+    import asyncio
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        # Bu platformalarda mavjud bo‘lgan event loop uchun
+        if str(e).startswith("Cannot close a running event loop"):
+            loop = asyncio.get_event_loop()
+            loop.create_task(main())
+            loop.run_forever()
+        else:
+            raise
