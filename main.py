@@ -1,49 +1,43 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import CommandHandler
 import os
 
-# Kinolar (video fayl IDlarini o'zingiz kiriting)
-MOVIES = {
-    "Avatar 2": "BQACAgQAAxkBAAIeX2YH...",  # bu yerga haqiqiy file_id yoziladi
-    "John Wick 4": "BQACAgQAAxkBAAIeYGZH...", 
-}
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="✅ Obuna bo‘ldingiz!\n🎬 Mana sizga birinchi kino:"
-    )
-    await context.bot.send_video(
-        chat_id=update.effective_chat.id,
-        video=MOVIES["Avatar 2"],
-        caption="🎬 Avatar 2"
-    )
-    buttons = [[InlineKeyboardButton(text=title, callback_data=title)] for title in MOVIES]
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="Yana kino tanlang 👇",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+# /stats komandasi – foydalanuvchi sonini ko‘rsatadi
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return await update.message.reply_text("❌ Siz admin emassiz.")
+    
+    # Bu yerda siz foydalanuvchilar ro‘yxatini fayl yoki bazadan o‘qishingiz mumkin
+    # Masalan, file.txt faylida barchaning ID'lari bo‘lsa:
+    try:
+        with open("users.txt", "r") as f:
+            users = f.readlines()
+        count = len(set(users))
+    except FileNotFoundError:
+        count = 0
+    
+    await update.message.reply_text(f"📊 Umumiy foydalanuvchilar: {count} ta")
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    title = query.data
-    video_id = MOVIES.get(title)
-    if video_id:
-        await query.message.reply_video(video=video_id, caption=f"🎬 {title}")
-    else:
-        await query.message.reply_text("Kino topilmadi.")
+# /sendall komandasi – hamma foydalanuvchilarga xabar yuboradi
+async def sendall(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return await update.message.reply_text("❌ Siz admin emassiz.")
 
-def main():
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    if not context.args:
+        return await update.message.reply_text("ℹ️ Xabar yozing: /sendall Salom!")
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    text = " ".join(context.args)
+    try:
+        with open("users.txt", "r") as f:
+            users = set(f.readlines())
+    except FileNotFoundError:
+        return await update.message.reply_text("🚫 Foydalanuvchilar topilmadi.")
 
-    print("✅ Bot ishga tushdi...")
-    app.run_polling()
+    for user_id in users:
+        try:
+            await context.bot.send_message(chat_id=int(user_id.strip()), text=text)
+        except Exception as e:
+            print(f"Xatolik: {e}")
 
-if __name__ == "__main__":
-    main()
+    await update.message.reply_text("✅ Xabar yuborildi.")
