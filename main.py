@@ -1,206 +1,101 @@
-import os
-import sqlite3
-from datetime import datetime
-from dotenv import load_dotenv
-from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, InputTextMessageContent, InlineQueryResultArticle
-)
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    InlineQueryHandler, ContextTypes, filters
-)
+import os import sqlite3 from dotenv import load_dotenv from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup from telegram.ext import ( ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes ) from datetime import datetime
 
-# === Yuklashlar ===
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMINS = os.getenv("ADMINS", "").split(",")
-DB_FILE = "cinemaxuz.db"
+Load .env
 
-# === SQLite baza ===
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-cursor = conn.cursor()
+load_dotenv() BOT_TOKEN = os.getenv("BOT_TOKEN") ADMINS = os.getenv("ADMINS", "").split(",")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS movies (
-    code TEXT PRIMARY KEY,
-    file_id TEXT,
-    title TEXT,
-    category TEXT
-)
-""")
+SQLite
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,
-    username TEXT,
-    last_seen TIMESTAMP
-)
-""")
-conn.commit()
+conn = sqlite3.connect("cinemaxuz.db", check_same_thread=False) cursor = conn.cursor()
 
-# === Util funksiyalar ===
-def add_movie(code, file_id, title, category="General"):
-    cursor.execute("REPLACE INTO movies VALUES (?, ?, ?, ?)", (code, file_id, title, category))
-    conn.commit()
+cursor.execute(""" CREATE TABLE IF NOT EXISTS movies ( code TEXT PRIMARY KEY, file_id TEXT, title TEXT, category TEXT, description TEXT ) """)
 
-def get_movie(code):
-    cursor.execute("SELECT * FROM movies WHERE code=?", (code,))
-    return cursor.fetchone()
+cursor.execute(""" CREATE TABLE IF NOT EXISTS users ( user_id TEXT PRIMARY KEY, username TEXT, last_seen TIMESTAMP ) """) conn.commit()
 
-def search_movies(query):
-    cursor.execute("SELECT * FROM movies WHERE title LIKE ?", (f"%{query}%",))
-    return cursor.fetchall()
+adding_movie = {} broadcasting = {}
 
-def get_all_movies():
-    cursor.execute("SELECT * FROM movies")
-    return cursor.fetchall()
+=== Helper functions ===
 
-def add_user(user_id, username):
-    cursor.execute("REPLACE INTO users VALUES (?, ?, ?)", (user_id, username or "", datetime.now()))
-    conn.commit()
+def add_user(user_id, username): cursor.execute("REPLACE INTO users VALUES (?, ?, ?)", (user_id, username or "", datetime.now())) conn.commit()
 
-def get_user_count():
-    cursor.execute("SELECT COUNT(*) FROM users")
-    return cursor.fetchone()[0]
+def add_movie(code, file_id, title, category, description): cursor.execute("REPLACE INTO movies VALUES (?, ?, ?, ?, ?)", (code, file_id, title, category, description)) conn.commit()
 
-# === Holatlar ===
-adding_movie = {}
-broadcasting = {}
+def get_movie(code): cursor.execute("SELECT * FROM movies WHERE code=?", (code,)) return cursor.fetchone()
 
-# === Handlerlar ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    add_user(str(user.id), user.username)
+def get_movies(offset=0, limit=10): cursor.execute("SELECT * FROM movies LIMIT ? OFFSET ?", (limit, offset)) return cursor.fetchall()
 
-    await update.message.reply_text(
-        "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kino nomidan</b> izlang:",
-        parse_mode="HTML"
-    )
+def get_movie_count(): cursor.execute("SELECT COUNT(*) FROM movies") return cursor.fetchone()[0]
 
-    movies = get_all_movies()
-    if movies:
-        buttons = [[InlineKeyboardButton(m[2], callback_data=m[0])] for m in movies[:10]]
-        markup = InlineKeyboardMarkup(buttons)
-        await update.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
+def search_movies(query): cursor.execute("SELECT * FROM movies WHERE title LIKE ?", (f"%{query}%",)) return cursor.fetchall()
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    movie = get_movie(query.data)
-    if movie:
-        await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
-    else:
-        await query.message.reply_text("❌ Kino topilmadi.")
+def get_user_count(): cursor.execute("SELECT COUNT(*) FROM users") return cursor.fetchone()[0]
 
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) not in ADMINS:
-        return await update.message.reply_text("🚫 Siz admin emassiz.")
+=== Handlers ===
 
-    keyboard = [["📊 Statistika", "➕ Kino qo‘shish"], ["📤 Xabar yuborish"]]
-    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("👑 Admin panel:", reply_markup=markup)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE): user = update.effective_user add_user(str(user.id), user.username) await update.message.reply_text("🎬 Xush kelibsiz! Kino kodini yozing yoki nomdan izlang.")
 
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    text = update.message.text.strip()
+movies = get_movies()
+if movies:
+    buttons = [[InlineKeyboardButton(m[2], callback_data=m[0])] for m in movies]
+    markup = InlineKeyboardMarkup(buttons)
+    await update.message.reply_text("🎥 Mavjud kinolar:", reply_markup=markup)
 
-    if adding_movie.get(user_id):
-        parts = text.split(";")
-        if len(parts) >= 3:
-            code, file_id, title = parts[0], parts[1], ";".join(parts[2:])
-            add_movie(code.strip(), file_id.strip(), title.strip())
-            adding_movie[user_id] = False
-            return await update.message.reply_text(f"✅ Qo‘shildi: {code} ➡ {title}")
-        return await update.message.reply_text("⚠️ Format: kod;file_id;kino nomi")
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE): query = update.callback_query await query.answer() code = query.data movie = get_movie(code) if movie: caption = f"🎬 {movie[2]}\n📂 Kategoriya: {movie[3]}\n📝 {movie[4]}" await query.message.reply_video(video=movie[1], caption=caption) else: await query.message.reply_text("❌ Kino topilmadi.")
 
-    if broadcasting.get(user_id):
-        broadcasting[user_id] = False
-        cursor.execute("SELECT user_id FROM users")
-        for (uid,) in cursor.fetchall():
-            try:
-                await context.bot.send_message(chat_id=int(uid), text=text)
-            except:
-                continue
-        return await update.message.reply_text("✅ Yuborildi!")
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE): user_id = str(update.effective_user.id) if user_id not in ADMINS: return await update.message.reply_text("⛔ Siz admin emassiz.")
 
-    if user_id in ADMINS:
-        if text == "➕ Kino qo‘shish":
-            adding_movie[user_id] = True
-            return await update.message.reply_text("📝 Format: kod;file_id;kino nomi")
-        elif text == "📤 Xabar yuborish":
-            broadcasting[user_id] = True
-            return await update.message.reply_text("✉️ Xabaringizni yozing:")
-        elif text == "📊 Statistika":
-            count = get_user_count()
-            return await update.message.reply_text(f"👥 Foydalanuvchilar soni: {count}")
+keyboard = [["📊 Statistika", "➕ Kino qo‘shish"], ["📤 Xabar yuborish"]]
+markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+await update.message.reply_text("👑 Admin panel:", reply_markup=markup)
 
-    movie = get_movie(text)
-    if movie:
-        return await update.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE): user_id = str(update.effective_user.id) text = update.message.text.strip()
 
-    results = search_movies(text)
-    if results:
-        for m in results:
-            await update.message.reply_video(video=m[1], caption=f"🎬 {m[2]}")
-    else:
-        await update.message.reply_text("❌ Hech narsa topilmadi.")
+if adding_movie.get(user_id):
+    parts = text.split(";")
+    if len(parts) >= 5:
+        code, file_id, title, category, description = [p.strip() for p in parts[:5]]
+        add_movie(code, file_id, title, category, description)
+        adding_movie[user_id] = False
+        return await update.message.reply_text(f"✅ Qo‘shildi: {title}")
+    return await update.message.reply_text("❗ Format: kod;file_id;nom;kategoriya;tavsif")
 
-async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.video:
-        file_id = update.message.video.file_id
-        await update.message.reply_text(f"🎬 file_id: <code>{file_id}</code>", parse_mode="HTML")
-    else:
-        await update.message.reply_text("❌ Video yuboring")
+if broadcasting.get(user_id):
+    broadcasting[user_id] = False
+    cursor.execute("SELECT user_id FROM users")
+    for (uid,) in cursor.fetchall():
+        try:
+            await context.bot.send_message(chat_id=int(uid), text=text)
+        except:
+            continue
+    return await update.message.reply_text("📤 Yuborildi!")
 
-async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.inline_query.query
-    if not query:
-        return
-    results = search_movies(query)
-    articles = [
-        InlineQueryResultArticle(
-            id=m[0],
-            title=m[2],
-            input_message_content=InputTextMessageContent(f"🎬 {m[2]}"),
-            description=f"Kod: {m[0]}",
-            thumb_url="https://via.placeholder.com/150"
-        ) for m in results[:10]
-    ]
-    await update.inline_query.answer(articles, cache_time=1)
+if user_id in ADMINS:
+    if text == "📊 Statistika":
+        count = get_user_count()
+        return await update.message.reply_text(f"👥 Foydalanuvchilar: {count} ta")
+    elif text == "➕ Kino qo‘shish":
+        adding_movie[user_id] = True
+        return await update.message.reply_text("📥 Format: kod;file_id;nom;kategoriya;tavsif")
+    elif text == "📤 Xabar yuborish":
+        broadcasting[user_id] = True
+        return await update.message.reply_text("✉️ Yuboriladigan xabarni yozing")
 
-# === Botni ishga tushirish ===
-if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    app.add_handler(InlineQueryHandler(inline_query))
-    print("✅ Bot ishga tayyor!")
-    app.run_polling()
+movie = get_movie(text)
+if movie:
+    caption = f"🎬 {movie[2]}\n📂 {movie[3]}\n📝 {movie[4]}"
+    await update.message.reply_video(video=movie[1], caption=caption)
+    return
 
+results = search_movies(text)
+if results:
+    for m in results:
+        await update.message.reply_video(video=m[1], caption=f"🎬 {m[2]}\n📂 {m[3]}\n📝 {m[4]}")
+    return
+await update.message.reply_text("❌ Topilmadi.")
 
-Mana, siz so‘raganidek faqat aql asosida (SQLite bazaga tayanib), to‘liq ishlaydigan main.py fayli tayyorlab berildi. Bu bot:
+async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE): if update.message.video: file_id = update.message.video.file_id await update.message.reply_text(f"🎬 file_id: <code>{file_id}</code>", parse_mode="HTML")
 
-Kino qo‘shish (kod;file_id;nom);
+=== Run bot ===
 
-Kino kodidan yoki nomidan izlab topish;
-
-Admin panel (statistika, xabar yuborish, qo‘shish);
-
-SQLite bazaga saqlash;
-
-Inline qidiruv;
-
-file_id olish;
-
-
-Hammasi ichida mavjud. Endi siz .env faylingizda quyidagicha yozganingizga ishonch hosil qiling:
-
-BOT_TOKEN=bot_tokeningiz
-ADMINS=12345678,98765432
-
-Agar hohlasangiz, botga rejalashtirilgan xabar, kategoriyalar bo‘yicha filter, tugmalarni sahifalash (pagination) yoki foydalanuvchilarni bloklash ham qo‘shishimiz mumkin. Ayting, qaysi funksiyalarni ustuvor qilaylik?
+if name == 'main': app = ApplicationBuilder().token(BOT_TOKEN).build() app.add_handler(CommandHandler("start", start)) app.add_handler(CommandHandler("admin", admin)) app.add_handler(CallbackQueryHandler(button_handler)) app.add_handler(MessageHandler(filters.VIDEO, get_file_id)) app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler)) print("🚀 CinemaxUZ bot ishga tushdi!") app.run_polling()
 
