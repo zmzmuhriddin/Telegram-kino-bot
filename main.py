@@ -13,13 +13,13 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 
-# 🎥 Kinolar ro'yxati (title: file_id)
+# 🎬 Kinolar ro'yxati
 MOVIES = {
     "Avatar 2": "VIDEO_FILE_ID_1",
     "John Wick 4": "VIDEO_FILE_ID_2"
 }
 
-# Qo‘shish holatini saqlovchi flag
+# Flag - admin kino qo‘shish rejimida yoki yo‘q
 adding_movie = False
 
 # /start komandasi
@@ -37,7 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=markup
     )
 
-# Tugma bosilganda kino yuborish
+# Tugma bosilganda
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -48,30 +48,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.message.reply_text("❌ Kino topilmadi.")
 
-# Kino kodini yozganda yoki admin yangi kino qo‘shganda
+# Kino kodi orqali yoki admin rejimida
 async def movie_by_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global adding_movie
     text = update.message.text.strip()
 
-    # Admin yangi kino qo‘shayotgan bo‘lsa
+    # Admin kino qo‘shayotgan bo‘lsa
     if adding_movie and str(update.effective_user.id) == ADMIN_ID:
-        adding_movie = False
-        try:
-            title, file_id = map(str.strip, text.split(";"))
-            MOVIES[title] = file_id
-            await update.message.reply_text(f"✅ <b>{title}</b> muvaffaqiyatli qo‘shildi!", parse_mode="HTML")
-        except:
-            await update.message.reply_text("❌ Format noto‘g‘ri. Quyidagicha yozing:\n<code>Kino nomi;file_id</code>", parse_mode="HTML")
+        if ";" in text:
+            title, file_id = text.split(";", 1)
+            MOVIES[title.strip()] = file_id.strip()
+            adding_movie = False
+            await update.message.reply_text(f"✅ Kino qo‘shildi: {title.strip()}")
+        else:
+            await update.message.reply_text(
+                "⚠️ Noto‘g‘ri format. Quyidagicha yozing:\n<code>Kino nomi;file_id</code>",
+                parse_mode="HTML"
+            )
         return
 
-    # Oddiy foydalanuvchi kino izlayapti
+    # Oddiy foydalanuvchi kodi
     video_id = MOVIES.get(text)
     if video_id:
         await update.message.reply_video(video=video_id, caption=f"🎬 {text}")
     else:
-        await update.message.reply_text("❌ Bunday kino topilmadi. Iltimos, to‘g‘ri kod kiriting.")
+        await update.message.reply_text("❌ Bunday kino topilmadi.")
 
-# /admin komandasi
+# Admin komandasi
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != ADMIN_ID:
         await update.message.reply_text("🚫 Siz admin emassiz.")
@@ -87,7 +90,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# Admin tugmalariga ishlovchi
+# Admin tugmalarini boshqarish
 async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global adding_movie
     if str(update.effective_user.id) != ADMIN_ID:
@@ -98,13 +101,16 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("👥 Obunachilar soni: 100+")
     elif text == "➕ Kino qo‘shish":
         adding_movie = True
-        await update.message.reply_text("📝 Kino nomi va file_id ni quyidagicha yuboring:\n<code>Kino nomi;file_id</code>", parse_mode="HTML")
+        await update.message.reply_text(
+            "📝 Kino nomi va file_id ni quyidagicha yuboring:\n<code>Kino nomi;file_id</code>",
+            parse_mode="HTML"
+        )
     elif text == "📤 Xabar yuborish":
         await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni yozing:")
     else:
         await update.message.reply_text("⚠️ Nomaʼlum buyruq.")
 
-# file_id olish uchun video yuborilsa
+# file_id olish uchun video yuborish
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
@@ -112,7 +118,7 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎬 Video file_id:\n<code>{file_id}</code>", parse_mode="HTML"
         )
     else:
-        await update.message.reply_text("❌ Video yuboring, boshqa narsa emas.")
+        await update.message.reply_text("❌ Video yuboring.")
 
 # Botni ishga tushirish
 if __name__ == '__main__':
