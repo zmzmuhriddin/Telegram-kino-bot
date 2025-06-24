@@ -1,4 +1,9 @@
-import os import sqlite3 from datetime import datetime from dotenv import load_dotenv from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup from telegram.ext import ( ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes )
+import os 
+import sqlite3
+from datetime import datetime
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup 
+from telegram.ext import ( ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes )
 
 load_dotenv() BOT_TOKEN = os.getenv("BOT_TOKEN") ADMINS = os.getenv("ADMINS", "").split(",") DB_FILE = "cinemaxuz.db"
 
