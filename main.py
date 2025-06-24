@@ -57,17 +57,33 @@ async def movie_by_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Bunday kino topilmadi. Iltimos, to‘g‘ri kod kiriting.")
 
-# 🛠 Admin komandasi (misol uchun)
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) == ADMIN_ID:
-        await update.message.reply_text("👑 Admin panelga xush kelibsiz!")
-    else:
-        await update.message.reply_text("🚫 Siz admin emassiz.")
+#from telegram import ReplyKeyboardMarkup
 
+# Admin tugma bosilganda
+async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != ADMIN_ID:
+        return
+
+    text = update.message.text
+    if text == "📊 Statistika":
+        await update.message.reply_text("👥 Obunachilar soni: 100+")
+    elif text == "➕ Kino qo‘shish":
+        await update.message.reply_text("📝 Kino nomi va file_id yozing:")
+    elif text == "📤 Xabar yuborish":
+        await update.message.reply_text("✉️ Yubormoqchi bo‘lgan xabaringizni yozing:")
+    else:
+        await update.message.reply_text("⚠️ Nomaʼlum buyruq.")
+        ]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard, resize_keyboard=True, one_time_keyboard=True
+        )
+        await update.message.reply_text("👑 Admin panelga xush kelibsiz! Quyidagilardan birini tanlang:", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text("🚫 Siz admin emassiz."
 # ▶️ Botni ishga tushirish
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_buttons))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CallbackQueryHandler(button_handler))
