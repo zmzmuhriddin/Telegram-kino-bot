@@ -1,72 +1,86 @@
-import os
 import nest_asyncio
-from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler,
-    CallbackQueryHandler, ContextTypes,
-    MessageHandler, filters
-)
-
-# Async loop xatolarini hal qiladi
 nest_asyncio.apply()
 
-# .env fayldan tokenlarni o‘qish
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+import os
+from dotenv import load_dotenv
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-# Kinolar (kod orqali va tugmalar orqali)
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+# 🎥 Kino ro'yxati (ID yoki havola)
 MOVIES = {
-    "123456": {
-        "title": "Avatar 2",
-        "video": "VIDEO_FILE_ID_1"
-    },
-    "654321": {
-        "title": "John Wick 4",
-        "video": "VIDEO_FILE_ID_2"
-    }
+    "Avatar 2": "VIDEO_FILE_ID_1",
+    "John Wick 4": "VIDEO_FILE_ID_2",
+    # "Kod123": "VIDEO_FILE_ID_3", kabi qo‘shishingiz mumkin
 }
 
 # /start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎬 *CinemaxUZ botiga xush kelibsiz!*\n\n"
-        "🎥 Kino ko‘rish uchun tugmadan tanlang yoki kino *kodini yozing*:",
+    chat_id = update.effective_chat.id
+    context.application.chat_data[chat_id] = True  # foydalanuvchini saqlash
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="🎬 *CinemaxUZ botiga xush kelibsiz!*\n\n🎥 Kino ko‘rish uchun tugmadan tanlang yoki kino *kodini yozing*:",
         parse_mode="Markdown"
     )
 
-    # Tugmalar orqali kino tanlash
-    buttons = [[InlineKeyboardButton(data['title'], callback_data=key)] for key, data in MOVIES.items()]
+    # Tugmalar
+    buttons = [[InlineKeyboardButton(title, callback_data=title)] for title in MOVIES]
     markup = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text("👇 Quyidagilardan birini tanlang:", reply_markup=markup)
 
-# Tugmadan kino tanlansa
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="👇 Kino ro‘yxati:",
+        reply_markup=markup
+    )
+
+# Tugmalarni bosganda
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    movie_key = query.data
-    movie = MOVIES.get(movie_key)
-    if movie:
-        await query.message.reply_video(video=movie["video"], caption=f"🎬 {movie['title']}")
+    title = query.data
+    video_id = MOVIES.get(title)
+    if video_id:
+        await query.message.reply_video(video=video_id, caption=f"🎬 {title}")
     else:
         await query.message.reply_text("❌ Kino topilmadi.")
 
-# Foydalanuvchi kino kodi yozsa
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text.strip()
-    movie = MOVIES.get(user_input)
-    if movie:
-        await update.message.reply_video(video=movie["video"], caption=f"🎬 {movie['title']}")
+# Matn yozilganda — kino kodi
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    video_id = MOVIES.get(text)
+    if video_id:
+        await update.message.reply_video(video=video_id, caption=f"🎬 {text}")
     else:
-        await update.message.reply_text("❌ Bunday kino kodi topilmadi.")
+        await update.message.reply_text("😔 Bunday kod bilan kino topilmadi.")
+
+# /admin komandasi
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id == ADMIN_ID:
+        total_users = len(context.application.chat_data)
+        await update.message.reply_text(
+            f"👨‍💻 *Admin panel:*\n\n"
+            f"👥 Obunachilar: {total_users}\n"
+            f"🎞 Kinolar soni: {len(MOVIES)}",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text("❌ Sizda ruxsat yo‘q.")
 
 # Botni ishga tushirish
-if __name__ == "__main__":
+if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    print("✅ CinemaxUZ bot ishga tushdi...")
+    print("✅ Bot ishga tushdi...")
     app.run_polling()
