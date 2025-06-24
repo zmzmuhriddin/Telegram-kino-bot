@@ -98,4 +98,3 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE): if up
 === Run bot ===
 
 if name == 'main': app = ApplicationBuilder().token(BOT_TOKEN).build() app.add_handler(CommandHandler("start", start)) app.add_handler(CommandHandler("admin", admin)) app.add_handler(CallbackQueryHandler(button_handler)) app.add_handler(MessageHandler(filters.VIDEO, get_file_id)) app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler)) print("🚀 CinemaxUZ bot ishga tushdi!") app.run_polling()
-
