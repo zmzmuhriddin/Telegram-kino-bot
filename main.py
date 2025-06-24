@@ -1,37 +1,62 @@
-import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNELS = os.getenv("CHANNELS", "").split(",")
+# Kinolar (video fayl IDlarini o'zingizniki bilan almashtiring)
+MOVIES = {
+    "Dunyoning yaratilishi": "https://t.me/zokirov_muxriddin/6",
+    "Hamid": "https://t.me/zokirov_muxriddin/14",
+}
 
-async def check_subs(user_id, context):
-    for channel in CHANNELS:
-        member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
-        if member.status not in ['member', 'administrator', 'creator']:
-            return False
-    return True
-
+# Start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if await check_subs(user_id, context):
-        await update.message.reply_text("✅ Obuna bo‘ldingiz!\n🎬 Mana sizga kino: 🎬 Kino bu yerda...")
-    else:
-        buttons = [[InlineKeyboardButton(ch, url=f"https://t.me/{ch[1:]}")] for ch in CHANNELS]
-        buttons.append([InlineKeyboardButton("✅ Obuna bo‘ldim", callback_data="check")])
-        await update.message.reply_text("❗ Kanal(lar)ga obuna bo‘ling:", reply_markup=InlineKeyboardMarkup(buttons))
+    user = update.effective_user
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ✅ Avtomatik birinchi kinoni yuborish
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="✅ Obuna bo‘ldingiz!\n🎬 Mana sizga birinchi kino:"
+    )
+    await context.bot.send_video(
+        chat_id=update.effective_chat.id,
+        video=MOVIES["Dunyoning yaratilishi"],  # Birinchi avtomatik kino
+        caption="🎬 Dunyoning yaratilishi"
+    )
+
+    # 🎬 Tugmalar bilan kino ro‘yxatini chiqarish
+    buttons = [
+        [InlineKeyboardButton(text=title, callback_data=title)]
+        for title in MOVIES
+    ]
+    reply_markup = InlineKeyboardMarkup(buttons)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Yana kino tanlang 👇",
+        reply_markup=reply_markup
+    )
+
+# Tugmani bosganda kino yuborish
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if await check_subs(query.from_user.id, context):
-        await query.edit_message_text("✅ Tekshiruvdan o‘tdingiz!\n🎬 Mana kino: 🎬 Kino bu yerda...")
+    title = query.data
+    video_id = MOVIES.get(title)
+    if video_id:
+        await query.message.reply_video(video=video_id, caption=f"🎬 {title}")
     else:
-        await query.edit_message_text("🚫 Hali obuna emassiz.")
+        await query.message.reply_text("Kino topilmadi.")
+
+# Botni ishga tushirish
+async def main():
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    print("✅ Bot ishga tushdi...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-    print("✅ Bot ishga tushdi…")
-    app.run_polling()
+    import asyncio
+    asyncio.run(main())
