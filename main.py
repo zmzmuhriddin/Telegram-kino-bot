@@ -1,21 +1,23 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from dotenv import load_dotenv
 import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+)
 
-# .env faylini yuklash
+from dotenv import load_dotenv
+import nest_asyncio
+import asyncio
+
+# .env faylni yuklab olish
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-
-# Kinolar (video fayl ID yoki havolani qo'yasiz)
+# Kinolar (video ID yoki havola)
 MOVIES = {
-    "Avatar 2": "https://example.com/avatar2.mp4",
-    "John Wick 4": "https://example.com/johnwick4.mp4"
+    "Avatar 2": "https://example.com/video1.mp4",  # bu yerga haqiqiy link yoki file_id yozing
+    "John Wick 4": "https://example.com/video2.mp4"
 }
 
-# /start komandasi
+# Start komandasi
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -27,19 +29,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption="🎬 Avatar 2"
     )
 
-    # Tugmalar
+    # Kino tugmalari
     buttons = [
         [InlineKeyboardButton(text=title, callback_data=title)]
         for title in MOVIES
     ]
-    markup = InlineKeyboardMarkup(buttons)
+    reply_markup = InlineKeyboardMarkup(buttons)
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text="Yana kino tanlang 👇",
-        reply_markup=markup
+        reply_markup=reply_markup
     )
 
-# Kino tugmasini bosganda
+# Tugma bosilganda kino yuborish
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -50,24 +52,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.message.reply_text("Kino topilmadi.")
 
-# /stats komandasi faqat admin uchun
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == ADMIN_ID:
-        await update.message.reply_text("📊 Statistika: Foydalanuvchilar soni: ??? (keyin yozamiz)")
-    else:
-        await update.message.reply_text("⛔ Sizda ruxsat yo‘q.")
-
-# Asosiy ishga tushirish
+# Botni ishga tushurish funksiyasi
 async def main():
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("✅ Bot ishga tushdi...")
     await app.run_polling()
 
+# asyncio muammosini hal qilish
+nest_asyncio.apply()
+
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
