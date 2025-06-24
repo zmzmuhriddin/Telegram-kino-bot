@@ -1,5 +1,3 @@
-CinemaxUz bot: Full Version with Advanced Features
-
 import os import json import sqlite3 import asyncio from datetime import datetime from dotenv import load_dotenv from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, InputTextMessageContent, InlineQueryResultArticle from telegram.ext import ( ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler, filters, ContextTypes )
 
 load_dotenv() BOT_TOKEN = os.getenv("BOT_TOKEN") ADMINS = os.getenv("ADMINS", "").split(",") DB_FILE = "cinemaxuz.db"
