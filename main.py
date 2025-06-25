@@ -57,13 +57,28 @@ def add_user(user_id, username):
         conn.execute("REPLACE INTO users VALUES (?, ?, ?)", (user_id, username or "", datetime.utcnow()))
 
 # === Obuna tekshirish funksiyasi ===
+
+# === Funksiyalar ===
+
+def add_user(user_id, username):
+    with conn:
+        conn.execute("REPLACE INTO users VALUES (?, ?, ?)", (user_id, username or "", datetime.utcnow()))
+
+CHANNELS = os.getenv("CHANNELS", "").split(",")
+
 async def is_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
-        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        return member.status in ["member", "administrator", "creator"]
+        for channel in CHANNELS:
+            member = await context.bot.get_chat_member(channel.strip(), user_id)
+            if member.status in ["member", "administrator", "creator"]:
+                continue
+            else:
+                return False
+        return True
     except Exception as e:
         print(f"Subscription check error: {e}")
         return False
+        
 def add_movie(code, file_id, title, category="Yangi"):
     with conn:
         conn.execute("REPLACE INTO movies VALUES (?, ?, ?, ?, 0)", (code, file_id, title, category))
