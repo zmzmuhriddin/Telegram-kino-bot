@@ -75,6 +75,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
 
+    buttons = [
+    [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
+    [InlineKeyboardButton("🔎 Qidiruv", callback_data="search")],
+    [InlineKeyboardButton("ℹ️ Ma'lumot", callback_data="info")]
+]
+markup = InlineKeyboardMarkup(buttons)
+
+await update.message.reply_text("Quyidagilardan birini tanlang:", reply_markup=markup)
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
         "🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kino nomidan</b> izlang:",
