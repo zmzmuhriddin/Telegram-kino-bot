@@ -177,12 +177,11 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             broadcasting[user_id] = True
             return await update.message.reply_text("✉️ Xabaringizni yozing:")
         elif text == "📊 Statistika":
-    user_count = get_user_count()
-    movie_count = get_movie_count()
-    await update.message.reply_text(
-        f"👥 Foydalanuvchilar: {user_count} ta\n"
-        f"🎥 Kinolar: {movie_count} ta\n"
-    )
+            user_count = get_user_count()
+            movie_count = get_movie_count()
+            await update.message.reply_text(
+            f"👥 Foydalanuvchilar: {user_count} ta\n"
+            f"🎥 Kinolar: {movie_count} ta\n"  )
 
     # Oddiy foydalanuvchi – kod orqali
     movie = get_movie(text)
