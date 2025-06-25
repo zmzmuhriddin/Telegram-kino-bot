@@ -305,9 +305,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for m in movies:
                 message += f"🎬 {m[2]} — {m[4]} ta ko‘rish\n"
             await update.message.reply_text(message, parse_mode="HTML")
+            return
         elif text == "📊 Statistika":
-            user_count
-            elif text == "📊 Statistika":
             user_count = get_user_count()
             movie_count = get_movie_count()
             category_count = len(get_all_categories())
@@ -316,7 +315,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🎥 Kinolar: {movie_count} ta\n"
                 f"🗂 Kategoriyalar: {category_count} ta"
             )
-        return
+            return
 
     # Foydalanuvchi uchun kino kodi yoki nomi bo‘yicha qidiruv
     movie = get_movie(text)
