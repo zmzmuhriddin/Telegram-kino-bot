@@ -65,7 +65,10 @@ def add_user(user_id, username):
 def get_user_count():
     cursor.execute("SELECT COUNT(*) FROM users")
     return cursor.fetchone()[0]
-
+    
+def get_movie_count():
+    cursor.execute("SELECT COUNT(*) FROM movies")
+    return cursor.fetchone()[0]
 # === Holatlar ===
 adding_movie = {}
 broadcasting = {}
@@ -174,8 +177,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             broadcasting[user_id] = True
             return await update.message.reply_text("✉️ Xabaringizni yozing:")
         elif text == "📊 Statistika":
-            count = get_user_count()
-            return await update.message.reply_text(f"👥 Foydalanuvchilar soni: {count}")
+    user_count = get_user_count()
+    movie_count = get_movie_count()
+    await update.message.reply_text(
+        f"👥 Foydalanuvchilar: {user_count} ta\n"
+        f"🎥 Kinolar: {movie_count} ta\n"
+    )
 
     # Oddiy foydalanuvchi – kod orqali
     movie = get_movie(text)
@@ -204,15 +211,19 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query
     if not query:
         return
+
     results = search_movies(query)
     articles = [
         InlineQueryResultArticle(
             id=m[0],
             title=m[2],
-            input_message_content=InputTextMessageContent(f"🎬 {m[2]}"),
-            description=f"Kod: {m[0]}",
-        ) for m in results[:10]
+            input_message_content=InputTextMessageContent(
+                f"🎬 {m[2]}\n\nKod: {m[0]}"
+            ),
+            description=f"Kod: {m[0]} | Kategoriya: {m[3]}",
+        ) for m in results[:20]
     ]
+
     await update.inline_query.answer(articles, cache_time=1)
 
 # === Boshlatish ===
