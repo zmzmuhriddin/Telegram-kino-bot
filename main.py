@@ -102,12 +102,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    movie = get_movie(query.data)
-    if movie:
-        await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
-    else:
-        await query.message.reply_text("❌ Kino topilmadi.")
 
+    if query.data == "movies":
+        movies = get_all_movies()
+        if movies:
+            buttons = [[InlineKeyboardButton(m[2], callback_data=m[0])] for m in movies[:10]]
+            markup = InlineKeyboardMarkup(buttons)
+            await query.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
+        else:
+            await query.message.reply_text("📭 Hozircha kinolar mavjud emas.")
+
+    elif query.data == "search":
+        await query.message.reply_text("🔎 Kino nomini yoki kodini yuboring, izlab topib beraman.")
+
+    elif query.data == "info":
+        await query.message.reply_text(
+            "ℹ️ <b>Ma'lumot:</b>\n\n"
+            "Bu bot orqali siz turli kinolarni topishingiz va tomosha qilishingiz mumkin.\n"
+            "👨‍💻 Dasturchi: @username\n"
+            "📅 Versiya: 1.0\n\n"
+            "👉 Kino kodini yozing yoki qidiruvdan foydalaning.",
+            parse_mode="HTML"
+        )
+
+    else:
+        movie = get_movie(query.data)
+        if movie:
+            await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
+        else:
+            await query.message.reply_text("❌ Kino topilmadi.")
 # === Admin Panel ===
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) not in ADMINS:
