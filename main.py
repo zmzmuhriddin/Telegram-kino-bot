@@ -16,7 +16,7 @@ from telegram.ext import (
 # === TAYYORLOV ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMINS = os.getenv("ADMINS", "").split(",")  # Masalan: "123456,7890"
+ADMINS = os.getenv("ADMINS", "").split(",")
 DB_FILE = "cinemaxuz.db"
 
 # === SQLite bazasini yaratish ===
@@ -65,34 +65,20 @@ def add_user(user_id, username):
 def get_user_count():
     cursor.execute("SELECT COUNT(*) FROM users")
     return cursor.fetchone()[0]
-    
+
 def get_movie_count():
     cursor.execute("SELECT COUNT(*) FROM movies")
     return cursor.fetchone()[0]
+
 # === Holatlar ===
 adding_movie = {}
 broadcasting = {}
 
-# === /start ===
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+# === Start ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    add_user(str(user.id), user.username)
 
-    if query.data == "check_sub":
-        is_subscribed = await check_subscription(query.from_user.id, context.bot)
-        if is_subscribed:
-            await query.message.reply_text("✅ Obuna tasdiqlandi. Endi botdan foydalanishingiz mumkin.")
-            await start(update, context)  # Qayta start
-        else:
-            await query.message.reply_text("🚫 Hali ham obuna bo‘lmagansiz!")
-        return
-
-    # Kino tugmalari ishlashi uchun
-    movie = get_movie(query.data)
-    if movie:
-        await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
-    else:
-        await query.message.reply_text("❌ Kino topilmadi.")
     buttons = [
         [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
         [InlineKeyboardButton("🔎 Qidiruv", callback_data="search")],
@@ -103,20 +89,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
         "🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kino nomidan</b> izlang.\n\n"
-        "Quyidagilardan birini tanlang:",
+        "👇 Quyidagilardan birini tanlang:",
         parse_mode="HTML",
         reply_markup=markup
     )
 
-    movies = get_all_movies()
-    if movies:
-        buttons = [[InlineKeyboardButton(m[2], callback_data=m[0])] for m in movies[:10]]
-        markup = InlineKeyboardMarkup(buttons)
-        await update.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
-    else:
-        await update.message.reply_text("📭 Hozircha kinolar mavjud emas.")
-
-# === Tugmali kino chiqarish ===
+# === Button Handler ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -124,7 +102,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "movies":
         movies = get_all_movies()
         if movies:
-            buttons = [[InlineKeyboardButton(m[2], callback_data=m[0])] for m in movies[:10]]
+            buttons = [[InlineKeyboardButton(m[2], callback_data=m[0])] for m in movies]
             markup = InlineKeyboardMarkup(buttons)
             await query.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
         else:
@@ -149,6 +127,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
         else:
             await query.message.reply_text("❌ Kino topilmadi.")
+
 # === Admin Panel ===
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) not in ADMINS:
@@ -157,7 +136,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("👑 Admin panel:", reply_markup=markup)
 
-# === Matnli xabarlar ===
+# === Matnli Xabarlar ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -172,7 +151,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await update.message.reply_text(f"✅ Qo‘shildi: {code.strip()} ➡ {title.strip()}")
         return await update.message.reply_text("⚠️ Format: kod;file_id;kino_nomi")
 
-    # Admin xabar yubormoqda
+    # Admin xabar yuborish
     if broadcasting.get(user_id):
         broadcasting[user_id] = False
         cursor.execute("SELECT user_id FROM users")
@@ -194,17 +173,17 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "📊 Statistika":
             user_count = get_user_count()
             movie_count = get_movie_count()
-            await update.message.reply_text(
-            f"👥 Foydalanuvchilar: {user_count} ta\n"
-            f"🎥 Kinolar: {movie_count} ta\n"  )
+            return await update.message.reply_text(
+                f"👥 Foydalanuvchilar: {user_count} ta\n"
+                f"🎥 Kinolar: {movie_count} ta"
+            )
 
-    # Oddiy foydalanuvchi – kod orqali
+    # Oddiy foydalanuvchi kino kodi yoki qidiruv
     movie = get_movie(text)
     if movie:
         await update.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
         return
 
-    # Qidiruv
     results = search_movies(text)
     if results:
         for m in results:
@@ -243,11 +222,13 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === Boshlatish ===
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     app.add_handler(InlineQueryHandler(inline_query))
+
     print("✅ Bot ishga tushdi...")
     app.run_polling()
