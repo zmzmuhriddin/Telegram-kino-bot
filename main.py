@@ -119,7 +119,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(
             "ℹ️ <b>Ma'lumot:</b>\n\n"
             "Bu bot orqali siz turli kinolarni topishingiz va tomosha qilishingiz mumkin.\n"
-            "👨‍💻 Dasturchi: @username\n"
+            "👨‍💻 Dasturchi: @Zokirov_cinemaxuz\n"
             "📅 Versiya: 1.0\n\n"
             "👉 Kino kodini yozing yoki qidiruvdan foydalaning.",
             parse_mode="HTML"
