@@ -169,6 +169,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Tugmalar uchun handler ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not await is_subscribed(user_id, context):
+        await update.callback_query.answer("🚫 Iltimos, kanalga obuna bo‘ling!", show_alert=True)
+        return
     query = update.callback_query
     await query.answer()
     data = query.data
