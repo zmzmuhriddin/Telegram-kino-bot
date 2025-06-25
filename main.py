@@ -17,7 +17,7 @@ from telegram.ext import (
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # Masalan, '@kanal_nomi'
 DB_FILE = os.getenv("DB_FILE", "cinemaxuz.db")
 
 # === Bazaga ulanish ===
@@ -56,14 +56,15 @@ def add_user(user_id, username):
     with conn:
         conn.execute("REPLACE INTO users VALUES (?, ?, ?)", (user_id, username or "", datetime.utcnow()))
 
-def is_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+async def is_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     """
-    Kanalga obuna tekshiruvi
+    Kanalga obuna tekshiruvi (async)
     """
     try:
-        member = context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return member.status in ["member", "administrator", "creator"]
-    except:
+    except Exception as e:
+        print(f"Subscription check error: {e}")
         return False
 
 def add_movie(code, file_id, title, category="Yangi"):
@@ -75,7 +76,6 @@ def delete_movie(code):
         conn.execute("DELETE FROM movies WHERE code=?", (code,))
 
 def update_movie(code, file_id=None, title=None, category=None):
-    # Yangilash uchun mos kelgan parametrlarga qarab yangilash
     set_clauses = []
     params = []
     if file_id is not None:
@@ -145,7 +145,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
 
-    if not is_subscribed(user.id, context):
+    if not await is_subscribed(user.id, context):
         await update.message.reply_text(
             f"🚫 Siz botdan foydalanish uchun {CHANNEL_USERNAME} kanaliga obuna bo‘ling."
         )
@@ -206,9 +206,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         movie = get_movie(code)
         if movie:
             update_movie_views(code)
-            await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
+            await update.callback_query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
         else:
-            await query.message.reply_text("❌ Kino topilmadi.")
+            await update.callback_query.message.reply_text("❌ Kino topilmadi.")
 
     elif data == "search":
         await query.message.reply_text("🔎 Kino nomi yoki kodini yozing.")
@@ -243,7 +243,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     # Obuna tekshiruvi
-    if not is_subscribed(update.effective_user.id, context):
+    if not await is_subscribed(update.effective_user.id, context):
         return await update.message.reply_text(f"🚫 Iltimos, {CHANNEL_USERNAME} kanaliga obuna bo‘ling.")
 
     # Admin holatlar
@@ -306,6 +306,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message += f"🎬 {m[2]} — {m[4]} ta ko‘rish\n"
             await update.message.reply_text(message, parse_mode="HTML")
         elif text == "📊 Statistika":
+            user_count
+            elif text == "📊 Statistika":
             user_count = get_user_count()
             movie_count = get_movie_count()
             category_count = len(get_all_categories())
