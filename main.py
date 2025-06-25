@@ -74,10 +74,25 @@ adding_movie = {}
 broadcasting = {}
 
 # === /start ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    add_user(str(user.id), user.username)
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
+    if query.data == "check_sub":
+        is_subscribed = await check_subscription(query.from_user.id, context.bot)
+        if is_subscribed:
+            await query.message.reply_text("✅ Obuna tasdiqlandi. Endi botdan foydalanishingiz mumkin.")
+            await start(update, context)  # Qayta start
+        else:
+            await query.message.reply_text("🚫 Hali ham obuna bo‘lmagansiz!")
+        return
+
+    # Kino tugmalari ishlashi uchun
+    movie = get_movie(query.data)
+    if movie:
+        await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
+    else:
+        await query.message.reply_text("❌ Kino topilmadi.")
     buttons = [
         [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
         [InlineKeyboardButton("🔎 Qidiruv", callback_data="search")],
