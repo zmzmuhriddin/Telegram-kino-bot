@@ -56,17 +56,14 @@ def add_user(user_id, username):
     with conn:
         conn.execute("REPLACE INTO users VALUES (?, ?, ?)", (user_id, username or "", datetime.utcnow()))
 
+# === Obuna tekshirish funksiyasi ===
 async def is_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Kanalga obuna tekshiruvi (async)
-    """
     try:
         member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
         print(f"Subscription check error: {e}")
         return False
-
 def add_movie(code, file_id, title, category="Yangi"):
     with conn:
         conn.execute("REPLACE INTO movies VALUES (?, ?, ?, ?, 0)", (code, file_id, title, category))
@@ -96,7 +93,9 @@ def update_movie(code, file_id=None, title=None, category=None):
 def get_movie(code):
     cursor.execute("SELECT * FROM movies WHERE code=?", (code,))
     return cursor.fetchone()
-
+def get_all_movies():
+    cursor.execute("SELECT * FROM movies ORDER BY title")
+    return cursor.fetchall()
 def search_movies(query):
     cursor.execute("SELECT * FROM movies WHERE title LIKE ?", (f"%{query}%",))
     return cursor.fetchall()
@@ -144,7 +143,6 @@ deleting_category = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
-
     if not await is_subscribed(user.id, context):
         await update.message.reply_text(
             f"🚫 Siz botdan foydalanish uchun {CHANNEL_USERNAME} kanaliga obuna bo‘ling."
