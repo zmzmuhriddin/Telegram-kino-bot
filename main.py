@@ -3,14 +3,13 @@ import asyncio
 import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
-from flask import Flask, request
-from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-)
+from fastapi import FastAPI, Request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, filters, ContextTypes
+    CallbackQueryHandler, ContextTypes, filters
 )
+import uvicorn
 
 # === YUKLASH ===
 load_dotenv()
@@ -18,20 +17,21 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 DATABASE_URL = os.getenv("DATABASE_URL")
-PORT = int(os.getenv("PORT", 10000))
 RENDER_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+PORT = int(os.getenv("PORT", 10000))
 
 # === DATABASE ===
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-# === FLASK ===
-app_web = Flask(__name__)
+# === FastAPI ===
+app_web = FastAPI()
 
 # === TELEGRAM APP ===
 application = Application.builder().token(BOT_TOKEN).build()
 
-# === JADVALLAR ===
+
+# === DATABASE JADVALLAR ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# === FUNKSIYALAR ===
+
+# === DATABASE FUNKSIYALAR ===
 def add_user(user_id, username):
     cursor.execute(
         "INSERT INTO users (user_id, username, last_seen) VALUES (%s, %s, %s) "
@@ -120,6 +121,7 @@ def get_top_movies(limit=10):
     cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
     return cursor.fetchall()
 
+
 # === HOLATLAR ===
 adding_movie = {}
 deleting_movie = {}
@@ -127,7 +129,8 @@ broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
-# === START ===
+
+# === COMMANDS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -198,7 +201,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-# === ADMIN PANEL ===
+# === ADMIN ===
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id not in ADMINS:
@@ -298,7 +301,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kino topilmadi.")
 
-# === FILE_ID OLISH ===
+# === FILE ID OLISH ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
@@ -306,25 +309,30 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Video yuboring.")
 
-# === WEBHOOK ===
-@app_web.route('/')
-def index():
-    return "✅ Bot ishlayapti!"
 
-@app_web.route(f"/{BOT_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put(update)
-    return "OK"
+# === FastAPI ROUTES ===
+@app_web.get("/")
+async def home():
+    return {"status": "Bot ishlayapti ✅"}
 
-# === ASYNC WEBHOOK SETUP ===
-async def setup_webhook():
+@app_web.post(f"/{BOT_TOKEN}")
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    update = Update.de_json(data, application.bot)
+    await application.update_queue.put(update)
+    return {"status": "ok"}
+
+
+# === WEBHOOK SETUP ===
+async def setup():
     await application.bot.delete_webhook()
-    await application.bot.set_webhook(url=f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}")
+    webhook_url = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
+    await application.bot.set_webhook(url=webhook_url)
 
-# === BOT START ===
+
+# === START ===
 if __name__ == "__main__":
-    asyncio.run(setup_webhook())
+    asyncio.run(setup())
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
@@ -332,5 +340,4 @@ if __name__ == "__main__":
     application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    print("🚀 Webhook bilan bot ishga tushdi...")
-    app_web.run(host="0.0.0.0", port=PORT)
+    uvicorn.run(app_web, host="0.0.0.0", port=PORT)
