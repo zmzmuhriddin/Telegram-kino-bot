@@ -1,4 +1,5 @@
 import os
+import asyncio
 import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
@@ -323,8 +324,8 @@ def webhook():
 if __name__ == "__main__":
     WEBHOOK_URL = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
 
-    application.bot.delete_webhook()
-    application.bot.set_webhook(url=WEBHOOK_URL)
+    asyncio.run(application.bot.delete_webhook())
+    asyncio.run(application.bot.set_webhook(url=WEBHOOK_URL))
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
