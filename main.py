@@ -3,6 +3,7 @@ import asyncio
 import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
+from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 )
@@ -10,7 +11,6 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes
 )
-from flask import Flask, request
 
 # === YUKLASH ===
 load_dotenv()
@@ -217,7 +217,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
-    # Admin funksiyalar
     if user_id in ADMINS:
         if adding_movie.get(user_id):
             parts = text.split(";")
@@ -254,7 +253,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     continue
             return await update.message.reply_text("✅ Xabar yuborildi!")
 
-        # Admin komandalar
         if text == "➕ Kino qo‘shish":
             adding_movie[user_id] = True
             return await update.message.reply_text("📝 Format: kod;file_id;kino_nomi;kategoriya")
@@ -288,7 +286,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # Foydalanuvchi uchun qidiruv
     movie = get_movie(text)
     if movie:
         update_movie_views(text)
@@ -320,12 +317,14 @@ def webhook():
     application.update_queue.put(update)
     return "OK"
 
-# === BOTNI ISHGA TUSHURISH ===
-if __name__ == "__main__":
-    WEBHOOK_URL = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
+# === ASYNC WEBHOOK SETUP ===
+async def setup_webhook():
+    await application.bot.delete_webhook()
+    await application.bot.set_webhook(url=f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}")
 
-    asyncio.run(application.bot.delete_webhook())
-    asyncio.run(application.bot.set_webhook(url=WEBHOOK_URL))
+# === BOT START ===
+if __name__ == "__main__":
+    asyncio.run(setup_webhook())
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
