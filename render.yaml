@@ -9,6 +9,7 @@ services:
         value: 7980560387:AAF54XxLrx1x3gY8OY_0mbArw3IvS5zkxd8
       - key: DATABASE_URL
         value: postgresql://cinemaxuzbot_user:ZSyahouLAN4rOBUMgBbAiJIS8veFoQCb@dpg-d1eicl7gi27c73elhin0-a.oregon-postgres.render.com/cinemaxuzbot
+      - key: ADMINS
         value: 5703922034,6764631404
       - key: CHANNEL_USERNAME
         value: @zokirov_muxriddin
