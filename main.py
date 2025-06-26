@@ -1,19 +1,16 @@
 import os
 import asyncio
-import threading
 import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
 )
 import uvicorn
+import nest_asyncio
 
 
 # === Load environment ===
@@ -38,7 +35,7 @@ app_web = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
 
-# === Create Tables ===
+# === Database Tables ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -150,7 +147,7 @@ adding_category = {}
 deleting_category = {}
 
 
-# === Handlers ===
+# === Telegram Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -322,7 +319,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Kino topilmadi.")
 
 
-# === Get File ID ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
@@ -331,7 +327,7 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Video yuboring.")
 
 
-# === FastAPI ===
+# === FastAPI Routes ===
 @app_web.get("/")
 async def home():
     return {"status": "Bot ishlayapti ✅"}
@@ -353,21 +349,19 @@ async def setup():
 
 # === Run ===
 if __name__ == "__main__":
-    def start_uvicorn():
-        uvicorn.run(app_web, host="0.0.0.0", port=PORT)
+    nest_asyncio.apply()
 
-    threading.Thread(target=start_uvicorn).start()
+    async def main():
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("admin", admin))
+        application.add_handler(CallbackQueryHandler(button_handler))
+        application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+        await application.initialize()
+        await setup()
+        await application.start()
+        print("✅ Bot va webhook ishga tushdi!")
 
-    asyncio.run(setup())
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}",
-    )
+    asyncio.get_event_loop().create_task(main())
+    uvicorn.run(app_web, host="0.0.0.0", port=PORT)
