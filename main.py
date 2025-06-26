@@ -1,39 +1,33 @@
 import os
-import asyncio
 import psycopg2
-import psycopg2.extras
 from datetime import datetime
 from dotenv import load_dotenv
-
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes
 )
 
-# === Config ===
+# === YUKLASH ===
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# === Database connect ===
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-conn.autocommit = True
-cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+# === POSTGRESGA ULANISH ===
+conn = psycopg2.connect(DATABASE_URL)
+cursor = conn.cursor()
 
-# === Create Tables ===
+# === JADVALLAR ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
-    file_id TEXT,
-    title TEXT,
-    category TEXT,
+    file_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
     views INTEGER DEFAULT 0
 );
 """)
@@ -51,30 +45,34 @@ CREATE TABLE IF NOT EXISTS users (
     last_seen TIMESTAMP
 );
 """)
+conn.commit()
 
-# === Functions ===
+# === FUNKSIYALAR ===
+
 def add_user(user_id, username):
     cursor.execute(
-        "INSERT INTO users (user_id, username, last_seen) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET last_seen = EXCLUDED.last_seen",
+        "INSERT INTO users (user_id, username, last_seen) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username, last_seen = EXCLUDED.last_seen",
         (user_id, username, datetime.utcnow())
     )
+    conn.commit()
 
-async def is_subscribed(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+def is_subscribed(user_id, context):
     try:
-        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        member = context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
         return member.status in ["member", "administrator", "creator"]
-    except Exception as e:
-        print(f"Subscription check error: {e}")
+    except Exception:
         return False
 
-def add_movie(code, file_id, title, category="Yangi"):
+def add_movie(code, file_id, title, category):
     cursor.execute(
-        "INSERT INTO movies (code, file_id, title, category) VALUES (%s, %s, %s, %s) ON CONFLICT (code) DO UPDATE SET file_id=EXCLUDED.file_id, title=EXCLUDED.title, category=EXCLUDED.category",
+        "INSERT INTO movies (code, file_id, title, category) VALUES (%s, %s, %s, %s) ON CONFLICT (code) DO NOTHING",
         (code, file_id, title, category)
     )
+    conn.commit()
 
 def delete_movie(code):
     cursor.execute("DELETE FROM movies WHERE code = %s", (code,))
+    conn.commit()
 
 def get_movie(code):
     cursor.execute("SELECT * FROM movies WHERE code = %s", (code,))
@@ -89,25 +87,20 @@ def get_movies_by_category(category):
     return cursor.fetchall()
 
 def get_all_movies():
-    cursor.execute("SELECT * FROM movies")
+    cursor.execute("SELECT * FROM movies ORDER BY title")
     return cursor.fetchall()
-
-def add_category(name):
-    cursor.execute("INSERT INTO categories (name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
-
-def delete_category(name):
-    cursor.execute("DELETE FROM categories WHERE name = %s", (name,))
 
 def get_all_categories():
     cursor.execute("SELECT name FROM categories ORDER BY name")
     return [row[0] for row in cursor.fetchall()]
 
-def update_movie_views(code):
-    cursor.execute("UPDATE movies SET views = views + 1 WHERE code = %s", (code,))
+def add_category(name):
+    cursor.execute("INSERT INTO categories (name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
+    conn.commit()
 
-def get_top_movies(limit=10):
-    cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
-    return cursor.fetchall()
+def delete_category(name):
+    cursor.execute("DELETE FROM categories WHERE name = %s", (name,))
+    conn.commit()
 
 def get_user_count():
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -117,48 +110,41 @@ def get_movie_count():
     cursor.execute("SELECT COUNT(*) FROM movies")
     return cursor.fetchone()[0]
 
-# === States ===
+def get_top_movies(limit=10):
+    cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
+    return cursor.fetchall()
+
+def update_movie_views(code):
+    cursor.execute("UPDATE movies SET views = views + 1 WHERE code = %s", (code,))
+    conn.commit()
+
+# === HOLATLAR ===
 adding_movie = {}
 deleting_movie = {}
 broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
-# === /start ===
+# === /start komandasi ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
 
-    if not await is_subscribed(user.id, context):
-        await update.message.reply_text(
-            f"🚫 Iltimos, {CHANNEL_USERNAME} kanaliga obuna bo‘ling."
-        )
-        return
-
-    buttons = [
-        [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
-        [InlineKeyboardButton("🗂 Kategoriyalar", callback_data="categories")],
-        [InlineKeyboardButton("🔎 Qidiruv", callback_data="search")],
-        [InlineKeyboardButton("ℹ️ Ma'lumot", callback_data="info")]
-    ]
-    markup = InlineKeyboardMarkup(buttons)
-
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
-        "🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kategoriya bo‘yicha</b> izlang.\n\n"
+        "🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kategoriya</b> bo‘yicha izlang.\n\n"
         "Quyidagilardan birini tanlang:",
         parse_mode="HTML",
-        reply_markup=markup
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
+            [InlineKeyboardButton("🗂 Kategoriyalar", callback_data="categories")],
+            [InlineKeyboardButton("🔎 Qidiruv", callback_data="search")],
+            [InlineKeyboardButton("ℹ️ Ma'lumot", callback_data="info")]
+        ])
     )
 
-# === Button handler ===
+# === CALLBACK HANDLER ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if not await is_subscribed(user_id, context):
-        await update.callback_query.answer("🚫 Iltimos, kanalga obuna bo‘ling!", show_alert=True)
-        return
-
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -166,9 +152,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "movies":
         movies = get_all_movies()
         if movies:
-            buttons = [[InlineKeyboardButton(m["title"], callback_data=f"movie_{m['code']}")] for m in movies]
-            markup = InlineKeyboardMarkup(buttons)
-            await query.message.reply_text("🎬 Mavjud kinolar:", reply_markup=markup)
+            buttons = [[InlineKeyboardButton(m[2], callback_data=f"movie_{m[0]}")] for m in movies]
+            await query.message.reply_text("🎬 Mavjud kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
             await query.message.reply_text("📭 Hozircha kinolar mavjud emas.")
 
@@ -176,32 +161,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         categories = get_all_categories()
         if categories:
             buttons = [[InlineKeyboardButton(c, callback_data=f"category_{c}")] for c in categories]
-            markup = InlineKeyboardMarkup(buttons)
-            await query.message.reply_text("🗂 Kategoriyalar:", reply_markup=markup)
+            await query.message.reply_text("🗂 Kategoriyalar:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            await query.message.reply_text("📭 Kategoriyalar mavjud emas.")
+            await query.message.reply_text("📭 Kategoriya mavjud emas.")
 
     elif data.startswith("category_"):
         category = data.split("_", 1)[1]
         movies = get_movies_by_category(category)
         if movies:
-            buttons = [[InlineKeyboardButton(m["title"], callback_data=f"movie_{m['code']}")] for m in movies]
-            markup = InlineKeyboardMarkup(buttons)
-            await query.message.reply_text(f"🎬 {category} kategoriyasidagi kinolar:", reply_markup=markup)
+            buttons = [[InlineKeyboardButton(m[2], callback_data=f"movie_{m[0]}")] for m in movies]
+            await query.message.reply_text(f"🎬 {category} kategoriyasidagi kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            await query.message.reply_text(f"📭 {category} kategoriyasida kinolar topilmadi.")
+            await query.message.reply_text(f"📭 {category} kategoriyasida kino yo'q.")
 
     elif data.startswith("movie_"):
         code = data.split("_", 1)[1]
         movie = get_movie(code)
         if movie:
             update_movie_views(code)
-            await query.message.reply_video(video=movie["file_id"], caption=f"🎬 {movie['title']}")
+            await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
         else:
             await query.message.reply_text("❌ Kino topilmadi.")
 
     elif data == "search":
-        await query.message.reply_text("🔎 Kino nomi yoki kodini yozing.")
+        await query.message.reply_text("🔎 Kino nomini yoki kodini yuboring.")
 
     elif data == "info":
         await query.message.reply_text(
@@ -213,28 +196,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-# === Admin Panel ===
+# === ADMIN PANEL ===
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id not in ADMINS:
         return await update.message.reply_text("🚫 Siz admin emassiz.")
+
     keyboard = [
         ["📊 Statistika", "➕ Kino qo‘shish"],
         ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
         ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
         ["📤 Xabar yuborish"]
     ]
-    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("👑 Admin panel:", reply_markup=markup)
+    await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
-# === Text handler ===
+# === MATN HANDLER ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
-    if not await is_subscribed(update.effective_user.id, context):
-        return await update.message.reply_text(f"🚫 Iltimos, {CHANNEL_USERNAME} kanaliga obuna bo‘ling.")
-
+    # Admin funksiyalar
     if user_id in ADMINS:
         if adding_movie.get(user_id):
             parts = text.split(";")
@@ -242,7 +223,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 code, file_id, title, category = map(str.strip, parts)
                 add_movie(code, file_id, title, category)
                 adding_movie[user_id] = False
-                return await update.message.reply_text(f"✅ Qo‘shildi: {title} ({category})")
+                return await update.message.reply_text(f"✅ Qo‘shildi: {code} ➡ {title} ({category})")
             else:
                 return await update.message.reply_text("⚠️ Format: kod;file_id;kino_nomi;kategoriya")
 
@@ -271,6 +252,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     continue
             return await update.message.reply_text("✅ Xabar yuborildi!")
 
+        # Admin komandalar
         if text == "➕ Kino qo‘shish":
             adding_movie[user_id] = True
             return await update.message.reply_text("📝 Format: kod;file_id;kino_nomi;kategoriya")
@@ -290,7 +272,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             movies = get_top_movies()
             message = "🏆 <b>Top 10 ko‘rilgan kinolar:</b>\n\n"
             for m in movies:
-                message += f"🎬 {m['title']} — {m['views']} ta ko‘rish\n"
+                message += f"🎬 {m[2]} — {m[4]} ta ko‘rish\n"
             await update.message.reply_text(message, parse_mode="HTML")
             return
         elif text == "📊 Statistika":
@@ -304,33 +286,34 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+    # Foydalanuvchi uchun qidiruv
     movie = get_movie(text)
     if movie:
         update_movie_views(text)
-        await update.message.reply_video(video=movie["file_id"], caption=f"🎬 {movie['title']}")
-        return
+        return await update.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
 
     results = search_movies(text)
     if results:
         for m in results:
-            await update.message.reply_video(video=m["file_id"], caption=f"🎬 {m['title']}")
+            await update.message.reply_video(video=m[1], caption=f"🎬 {m[2]}")
     else:
-        await update.message.reply_text("❌ Hech narsa topilmadi.")
+        await update.message.reply_text("❌ Kino topilmadi.")
 
-# === Get file_id ===
+# === FILE_ID OLISH ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
         await update.message.reply_text(f"🎬 file_id: <code>{file_id}</code>", parse_mode="HTML")
     else:
-        await update.message.reply_text("❌ Iltimos, video yuboring.")
+        await update.message.reply_text("❌ Video yuboring.")
 
-# === Run ===
+# === BOTNI ISHGA TUSHURISH ===
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
