@@ -11,7 +11,8 @@ from telegram.ext import (
 )
 import uvicorn
 
-# === Yuklash ===
+
+# === Load environment ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
@@ -19,17 +20,18 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 RENDER_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 PORT = int(os.getenv("PORT", 10000))
 
-# === Database ===
+
+# === Database Connection ===
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
 # === FastAPI ===
 app_web = FastAPI()
 
-# === Telegram App ===
+# === Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
 
-# === Jadval yaratish ===
+# === Create Tables ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-# === Database funksiyalar ===
+# === Database Functions ===
 def add_user(user_id, username):
     cursor.execute(
         "INSERT INTO users (user_id, username, last_seen) VALUES (%s, %s, %s) "
@@ -118,7 +120,7 @@ def get_top_movies(limit=10):
     cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
     return cursor.fetchall()
 
-# === Holatlar ===
+# === States ===
 adding_movie = {}
 deleting_movie = {}
 broadcasting = {}
@@ -143,6 +145,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
+
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id not in ADMINS:
@@ -156,7 +159,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
-# === Button Callback ===
+
+# === Button Handler ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -209,7 +213,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-# === Matn Handler ===
+
+# === Text Handler ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -295,13 +300,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kino topilmadi.")
 
-# === File ID olish ===
+
+# === Get File ID ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
         await update.message.reply_text(f"🎬 file_id: <code>{file_id}</code>", parse_mode="HTML")
     else:
         await update.message.reply_text("❌ Video yuboring.")
+
 
 # === FastAPI ===
 @app_web.get("/")
@@ -315,23 +322,26 @@ async def telegram_webhook(req: Request):
     await application.update_queue.put(update)
     return {"status": "ok"}
 
-# === Webhook setup ===
+
+# === Webhook Setup ===
 async def setup():
     await application.bot.delete_webhook()
     webhook_url = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
 
+
 # === Run ===
 if __name__ == "__main__":
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    async def main():
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("admin", admin))
+        application.add_handler(CallbackQueryHandler(button_handler))
+        application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    loop = asyncio.get_event_loop()
-    loop.create_task(setup())
-    loop.create_task(application.initialize())
-    loop.create_task(application.start())
+        await application.initialize()
+        await setup()
+        await application.start()
 
+    asyncio.get_event_loop().create_task(main())
     uvicorn.run(app_web, host="0.0.0.0", port=PORT)
