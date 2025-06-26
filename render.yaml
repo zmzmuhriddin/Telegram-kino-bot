@@ -14,7 +14,3 @@ services:
         value: @zokirov_muxriddin
       - key: DB_FILE
         value: cinemaxuz.db
-      - key: WEBHOOK_URL
-        value: https://your-app-name.onrender.com/webhook
-      - key: PORT
-        value: 10000
