@@ -1,28 +1,24 @@
 import os
-import sqlite3
-from datetime import datetime, timezone
-
+import psycopg2
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    CallbackQueryHandler, filters, ContextTypes
 )
-from telegram.ext.webhook import WebhookServer
 
+# === Load env ===
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
-CHANNELS = os.getenv("CHANNELS", "").split(",")
-DB_FILE = os.getenv("DB_FILE", "cinemaxuz.db")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.getenv("PORT", 10000))
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+# === Connect to PostgreSQL ===
+conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
+# === Create tables ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -30,312 +26,228 @@ CREATE TABLE IF NOT EXISTS movies (
     title TEXT,
     category TEXT,
     views INTEGER DEFAULT 0
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS categories (
-    name TEXT PRIMARY KEY
-)
+);
 """)
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
     username TEXT,
-    last_seen TIMESTAMP
-)
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """)
+
 conn.commit()
 
-# === Funksiyalar ===
+# === Functions ===
 def add_user(user_id, username):
-    with conn:
-        conn.execute(
-            "REPLACE INTO users VALUES (?, ?, ?)",
-            (user_id, username or "", datetime.now(timezone.utc))
-        )
+    cursor.execute("""
+        INSERT INTO users (user_id, username, last_seen)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET username = EXCLUDED.username, last_seen = NOW();
+    """, (user_id, username))
+    conn.commit()
 
 def is_admin(user_id):
     return str(user_id) in ADMINS
 
-async def is_subscribed(user_id, context):
-    for channel in CHANNELS:
-        try:
-            member = await context.bot.get_chat_member(channel.strip(), user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                return False
-        except:
-            return False
-    return True
-
-def add_movie(code, file_id, title, category="Yangi"):
-    with conn:
-        conn.execute(
-            "REPLACE INTO movies VALUES (?, ?, ?, ?, 0)",
-            (code, file_id, title, category)
-        )
+def add_movie(code, file_id, title, category):
+    cursor.execute("""
+        INSERT INTO movies (code, file_id, title, category, views)
+        VALUES (%s, %s, %s, %s, 0)
+        ON CONFLICT (code) DO UPDATE SET file_id = EXCLUDED.file_id, title = EXCLUDED.title, category = EXCLUDED.category;
+    """, (code, file_id, title, category))
+    conn.commit()
 
 def delete_movie(code):
-    with conn:
-        conn.execute("DELETE FROM movies WHERE code=?", (code,))
-
-def add_category(name):
-    with conn:
-        conn.execute("INSERT OR IGNORE INTO categories VALUES (?)", (name,))
-
-def delete_category(name):
-    with conn:
-        conn.execute("DELETE FROM categories WHERE name=?", (name,))
+    cursor.execute("DELETE FROM movies WHERE code = %s;", (code,))
+    conn.commit()
 
 def get_movie(code):
-    cursor.execute("SELECT * FROM movies WHERE code=?", (code,))
+    cursor.execute("SELECT * FROM movies WHERE code = %s;", (code,))
     return cursor.fetchone()
 
-def get_all_movies():
-    cursor.execute("SELECT * FROM movies ORDER BY title")
-    return cursor.fetchall()
-
-def get_movies_by_category(category):
-    cursor.execute("SELECT * FROM movies WHERE category=?", (category,))
-    return cursor.fetchall()
-
 def search_movies(query):
-    cursor.execute("SELECT * FROM movies WHERE title LIKE ?", (f"%{query}%",))
+    cursor.execute("SELECT * FROM movies WHERE title ILIKE %s;", (f"%{query}%",))
     return cursor.fetchall()
-
-def get_all_categories():
-    cursor.execute("SELECT name FROM categories ORDER BY name")
-    return [row[0] for row in cursor.fetchall()]
-
-def get_user_count():
-    cursor.execute("SELECT COUNT(*) FROM users")
-    return cursor.fetchone()[0]
-
-def get_movie_count():
-    cursor.execute("SELECT COUNT(*) FROM movies")
-    return cursor.fetchone()[0]
 
 def get_top_movies(limit=10):
-    cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT ?", (limit,))
+    cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s;", (limit,))
     return cursor.fetchall()
 
+def get_stats():
+    cursor.execute("SELECT COUNT(*) FROM users;")
+    users = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM movies;")
+    movies = cursor.fetchone()[0]
+    return users, movies
+
 def update_movie_views(code):
-    with conn:
-        conn.execute(
-            "UPDATE movies SET views = views + 1 WHERE code=?", (code,)
-        )
+    cursor.execute("UPDATE movies SET views = views + 1 WHERE code = %s;", (code,))
+    conn.commit()
 
-# === Holatlar ===
-adding_movie = {}
-deleting_movie = {}
-broadcasting = {}
-adding_category = {}
-deleting_category = {}
-
-# === Komandalar ===
+# === /start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
-    if not await is_subscribed(user.id, context):
-        await update.message.reply_text("🚫 Kanalga obuna bo‘ling!")
-        return
 
     buttons = [
         [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
-        [InlineKeyboardButton("🗂 Kategoriyalar", callback_data="categories")],
         [InlineKeyboardButton("🔎 Qidiruv", callback_data="search")],
         [InlineKeyboardButton("ℹ️ Ma'lumot", callback_data="info")]
     ]
     markup = InlineKeyboardMarkup(buttons)
+
     await update.message.reply_text(
-        "🎬 CinemaxUZ botiga xush kelibsiz!", reply_markup=markup
+        "🎬 CinemaxUZ botiga xush kelibsiz!\nKino kodini yuboring yoki qidiruvdan foydalaning.",
+        reply_markup=markup
     )
 
+# === Admin ===
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if not is_admin(user_id):
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("🚫 Siz admin emassiz.")
         return
+
     keyboard = [
         ["📊 Statistika", "➕ Kino qo‘shish"],
-        ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
-        ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
-        ["📤 Xabar yuborish"]
+        ["❌ Kino o‘chirish", "📥 Top kinolar"],
+        ["📤 Xabar yuborish", "👥 Users List"]
     ]
-    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text("👑 Admin panel:", reply_markup=markup)
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
-
-    if not await is_subscribed(user_id, context):
-        await query.message.reply_text("🚫 Obuna bo‘ling!")
-        return
-
-    if data == "movies":
-        movies = get_all_movies()
-        if movies:
-            buttons = [[InlineKeyboardButton(m[2], callback_data=f"movie_{m[0]}")] for m in movies]
-            await query.message.reply_text("🎬 Kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
-        else:
-            await query.message.reply_text("📭 Kinolar yo‘q.")
-    elif data == "categories":
-        categories = get_all_categories()
-        if categories:
-            buttons = [[InlineKeyboardButton(c, callback_data=f"category_{c}")] for c in categories]
-            await query.message.reply_text("🗂 Kategoriyalar:", reply_markup=InlineKeyboardMarkup(buttons))
-        else:
-            await query.message.reply_text("📭 Kategoriya yo‘q.")
-    elif data.startswith("category_"):
-        category = data.split("_", 1)[1]
-        movies = get_movies_by_category(category)
-        if movies:
-            buttons = [[InlineKeyboardButton(m[2], callback_data=f"movie_{m[0]}")] for m in movies]
-            await query.message.reply_text(f"🎬 {category} kategoriyasidagi kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
-        else:
-            await query.message.reply_text("📭 Kino yo‘q.")
-    elif data.startswith("movie_"):
-        code = data.split("_", 1)[1]
-        movie = get_movie(code)
-        if movie:
-            update_movie_views(code)
-            await query.message.reply_video(movie[1], caption=movie[2])
-        else:
-            await query.message.reply_text("❌ Kino topilmadi.")
-    elif data == "search":
-        await query.message.reply_text("🔎 Kino nomi yoki kodini yuboring.")
-    elif data == "info":
-        await query.message.reply_text("ℹ️ @CinemaxUz bot. Kinolarni ko‘rish uchun foydalaning.")
-
+# === Matn handler ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
-    if not await is_subscribed(update.effective_user.id, context):
-        await update.message.reply_text("🚫 Obuna bo‘ling!")
-        return
+    add_user(user_id, update.effective_user.username)
 
+    # Admin commands
     if is_admin(user_id):
-        if adding_movie.get(user_id):
-            parts = text.split(";")
-            if len(parts) >= 4:
-                code, file_id, title, category = map(str.strip, parts)
+        if text == "➕ Kino qo‘shish":
+            await update.message.reply_text("Format: kod;file_id;kino_nomi;kategoriya")
+            context.user_data["adding_movie"] = True
+            return
+
+        if text == "❌ Kino o‘chirish":
+            await update.message.reply_text("Kino kodini yuboring.")
+            context.user_data["deleting_movie"] = True
+            return
+
+        if text == "📥 Top kinolar":
+            top = get_top_movies()
+            msg = "🏆 Top kinolar:\n\n"
+            for m in top:
+                msg += f"🎬 {m[2]} — {m[4]} ta ko‘rish\n"
+            await update.message.reply_text(msg)
+            return
+
+        if text == "📊 Statistika":
+            users, movies = get_stats()
+            await update.message.reply_text(f"👥 Foydalanuvchilar: {users}\n🎥 Kinolar: {movies}")
+            return
+
+        if text == "👥 Users List":
+            cursor.execute("SELECT user_id, username FROM users;")
+            users = cursor.fetchall()
+            msg = "👥 Foydalanuvchilar ro‘yxati:\n\n"
+            for user_id, username in users:
+                name = username if username else "Noma'lum"
+                msg += f"🆔 {user_id} — @{name}\n"
+            await update.message.reply_text(msg)
+            return
+
+        if text == "📤 Xabar yuborish":
+            await update.message.reply_text("✉️ Xabar matnini yuboring.")
+            context.user_data["broadcasting"] = True
+            return
+
+        if context.user_data.get("adding_movie"):
+            try:
+                code, file_id, title, category = map(str.strip, text.split(";"))
                 add_movie(code, file_id, title, category)
-                adding_movie[user_id] = False
                 await update.message.reply_text(f"✅ Qo‘shildi: {title}")
-            else:
-                await update.message.reply_text("⚠️ Format: kod;file_id;title;category")
+            except:
+                await update.message.reply_text("⚠️ Format xato!")
+            context.user_data["adding_movie"] = False
             return
 
-        if deleting_movie.get(user_id):
+        if context.user_data.get("deleting_movie"):
             delete_movie(text)
-            deleting_movie[user_id] = False
             await update.message.reply_text(f"❌ O‘chirildi: {text}")
+            context.user_data["deleting_movie"] = False
             return
 
-        if adding_category.get(user_id):
-            add_category(text)
-            adding_category[user_id] = False
-            await update.message.reply_text(f"✅ Kategoriya qo‘shildi: {text}")
-            return
-
-        if deleting_category.get(user_id):
-            delete_category(text)
-            deleting_category[user_id] = False
-            await update.message.reply_text(f"❌ Kategoriya o‘chirildi: {text}")
-            return
-
-        if broadcasting.get(user_id):
-            broadcasting[user_id] = False
-            cursor.execute("SELECT user_id FROM users")
+        if context.user_data.get("broadcasting"):
+            cursor.execute("SELECT user_id FROM users;")
             for (uid,) in cursor.fetchall():
                 try:
-                    await context.bot.send_message(int(uid), text)
+                    await context.bot.send_message(chat_id=int(uid), text=text)
                 except:
                     continue
             await update.message.reply_text("✅ Xabar yuborildi!")
+            context.user_data["broadcasting"] = False
             return
 
-        if text == "➕ Kino qo‘shish":
-            adding_movie[user_id] = True
-            await update.message.reply_text("📝 Format: kod;file_id;title;category")
-        elif text == "❌ Kino o‘chirish":
-            deleting_movie[user_id] = True
-            await update.message.reply_text("🗑 Kino kodini yuboring.")
-        elif text == "🗂 Kategoriya qo‘shish":
-            adding_category[user_id] = True
-            await update.message.reply_text("➕ Kategoriya nomini yuboring.")
-        elif text == "🗑 Kategoriya o‘chirish":
-            deleting_category[user_id] = True
-            await update.message.reply_text("❌ Kategoriya nomini yuboring.")
-        elif text == "📥 Top kinolar":
-            movies = get_top_movies()
-            msg = "🏆 Top kinolar:\n\n"
-            for m in movies:
-                msg += f"🎬 {m[2]} — {m[4]} ko‘rish\n"
-            await update.message.reply_text(msg)
-        elif text == "📊 Statistika":
-            await update.message.reply_text(
-                f"👥 Foydalanuvchilar: {get_user_count()}\n"
-                f"🎥 Kinolar: {get_movie_count()}\n"
-                f"🗂 Kategoriya: {len(get_all_categories())}"
-            )
-        elif text == "📤 Xabar yuborish":
-            broadcasting[user_id] = True
-            await update.message.reply_text("✉️ Xabar matnini yuboring.")
-        return
-
-    # Foydalanuvchi uchun qidiruv
+    # Foydalanuvchi uchun kino qidirish
     movie = get_movie(text)
     if movie:
-        update_movie_views(text)
-        await update.message.reply_video(movie[1], caption=movie[2])
+        update_movie_views(movie[0])
+        await update.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
         return
 
     results = search_movies(text)
     if results:
         for m in results:
-            await update.message.reply_video(m[1], caption=m[2])
+            await update.message.reply_video(video=m[1], caption=f"🎬 {m[2]}")
     else:
-        await update.message.reply_text("❌ Kino topilmadi.")
+        await update.message.reply_text("❌ Hech narsa topilmadi.")
 
+# === Button handler ===
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "info":
+        await query.message.reply_text("ℹ️ CinemaxUZ bot. Dasturchi: @zokirov_cinemaxuz")
+    elif data == "search":
+        await query.message.reply_text("🔎 Kino nomini yoki kodini yuboring.")
+    elif data == "movies":
+        cursor.execute("SELECT code, title FROM movies;")
+        movies = cursor.fetchall()
+        if movies:
+            buttons = [[InlineKeyboardButton(m[1], callback_data=f"movie_{m[0]}")] for m in movies]
+            await query.message.reply_text("🎬 Kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
+        else:
+            await query.message.reply_text("📭 Kinolar mavjud emas.")
+    elif data.startswith("movie_"):
+        code = data.split("_", 1)[1]
+        movie = get_movie(code)
+        if movie:
+            update_movie_views(movie[0])
+            await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
+        else:
+            await query.message.reply_text("❌ Kino topilmadi.")
+
+# === File ID olish ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
-        await update.message.reply_text(f"🎬 file_id: <code>{update.message.video.file_id}</code>", parse_mode="HTML")
+        await update.message.reply_text(f"📥 file_id: {update.message.video.file_id}")
 
-# === Bot va webhook ===
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("admin", admin))
-app.add_handler(CallbackQueryHandler(button_handler))
-app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+# === Run ===
+if __name__ == '__main__':
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-fastapi_app = FastAPI()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
 
-@fastapi_app.post("/webhook")
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, app.bot)
-    await app.update_queue.put(update)
-    return {"ok": True}
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.VIDEO, get_file_id))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-@app.on_startup
-async def startup():
-    await app.bot.set_webhook(url=WEBHOOK_URL)
-
-@app.on_shutdown
-async def shutdown():
-    await app.bot.delete_webhook()
-
-if __name__ == "__main__":
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL,
-        fastapi=fastapi_app
-        )
+    print("✅ Bot ishlayapti...")
+    app.run_polling()
