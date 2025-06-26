@@ -323,16 +323,15 @@ async def setup():
 
 # === Run ===
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-
-    loop.create_task(setup())
-    loop.create_task(application.initialize())
-    loop.create_task(application.start())
-
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(setup())
+    loop.create_task(application.initialize())
+    loop.create_task(application.start())
 
     uvicorn.run(app_web, host="0.0.0.0", port=PORT)
