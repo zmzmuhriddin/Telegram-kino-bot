@@ -1,9 +1,7 @@
 import os
-from urllib.parse import urlparse
-from datetime import datetime
 import psycopg2
+from datetime import datetime
 from dotenv import load_dotenv
-from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 )
@@ -11,6 +9,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters, ContextTypes
 )
+from flask import Flask, request
 
 # === YUKLASH ===
 load_dotenv()
@@ -21,18 +20,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 PORT = int(os.getenv("PORT", 10000))
 RENDER_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 
-# === POSTGRES ULANISH ===
-result = urlparse(DATABASE_URL)
-conn = psycopg2.connect(
-    dbname=result.path[1:],
-    user=result.username,
-    password=result.password,
-    host=result.hostname,
-    port=result.port
-)
+# === DATABASE ===
+conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-# === FLASK APP ===
+# === FLASK ===
 app_web = Flask(__name__)
 
 # === TELEGRAM APP ===
@@ -134,7 +126,7 @@ broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
-# === HANDLERLAR ===
+# === START ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -152,19 +144,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if user_id not in ADMINS:
-        return await update.message.reply_text("🚫 Siz admin emassiz.")
-
-    keyboard = [
-        ["📊 Statistika", "➕ Kino qo‘shish"],
-        ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
-        ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
-        ["📤 Xabar yuborish"]
-    ]
-    await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
-
+# === CALLBACK ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -217,6 +197,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
+# === ADMIN PANEL ===
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id not in ADMINS:
+        return await update.message.reply_text("🚫 Siz admin emassiz.")
+
+    keyboard = [
+        ["📊 Statistika", "➕ Kino qo‘shish"],
+        ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
+        ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
+        ["📤 Xabar yuborish"]
+    ]
+    await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+
+# === MATN HANDLER ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -305,6 +300,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kino topilmadi.")
 
+# === FILE_ID OLISH ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
@@ -330,7 +326,6 @@ if __name__ == "__main__":
     application.bot.delete_webhook()
     application.bot.set_webhook(url=WEBHOOK_URL)
 
-    # HANDLERLAR
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CallbackQueryHandler(button_handler))
