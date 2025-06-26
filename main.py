@@ -1,10 +1,14 @@
 import os
 import asyncio
+import threading
 import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup,
+    ReplyKeyboardMarkup
+)
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
@@ -25,11 +29,14 @@ PORT = int(os.getenv("PORT", 10000))
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-# === FastAPI ===
+
+# === FastAPI App ===
 app_web = FastAPI()
+
 
 # === Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
+
 
 # === Create Tables ===
 cursor.execute("""
@@ -55,6 +62,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
+
 # === Database Functions ===
 def add_user(user_id, username):
     cursor.execute(
@@ -64,25 +72,31 @@ def add_user(user_id, username):
     )
     conn.commit()
 
+
 def get_movie(code):
     cursor.execute("SELECT * FROM movies WHERE code = %s", (code,))
     return cursor.fetchone()
+
 
 def search_movies(query):
     cursor.execute("SELECT * FROM movies WHERE title ILIKE %s", (f"%{query}%",))
     return cursor.fetchall()
 
+
 def get_all_movies():
     cursor.execute("SELECT * FROM movies ORDER BY title")
     return cursor.fetchall()
+
 
 def get_movies_by_category(category):
     cursor.execute("SELECT * FROM movies WHERE category = %s", (category,))
     return cursor.fetchall()
 
+
 def get_all_categories():
     cursor.execute("SELECT name FROM categories ORDER BY name")
     return [row[0] for row in cursor.fetchall()]
+
 
 def add_movie(code, file_id, title, category):
     cursor.execute(
@@ -92,33 +106,41 @@ def add_movie(code, file_id, title, category):
     )
     conn.commit()
 
+
 def delete_movie(code):
     cursor.execute("DELETE FROM movies WHERE code = %s", (code,))
     conn.commit()
+
 
 def add_category(name):
     cursor.execute("INSERT INTO categories (name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
     conn.commit()
 
+
 def delete_category(name):
     cursor.execute("DELETE FROM categories WHERE name = %s", (name,))
     conn.commit()
+
 
 def get_user_count():
     cursor.execute("SELECT COUNT(*) FROM users")
     return cursor.fetchone()[0]
 
+
 def get_movie_count():
     cursor.execute("SELECT COUNT(*) FROM movies")
     return cursor.fetchone()[0]
+
 
 def update_movie_views(code):
     cursor.execute("UPDATE movies SET views = views + 1 WHERE code = %s", (code,))
     conn.commit()
 
+
 def get_top_movies(limit=10):
     cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
     return cursor.fetchall()
+
 
 # === States ===
 adding_movie = {}
@@ -127,7 +149,8 @@ broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
-# === Command Handlers ===
+
+# === Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -160,7 +183,6 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
 
-# === Button Handler ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -214,7 +236,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# === Text Handler ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -332,16 +353,21 @@ async def setup():
 
 # === Run ===
 if __name__ == "__main__":
-    async def main():
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("admin", admin))
-        application.add_handler(CallbackQueryHandler(button_handler))
-        application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    def start_uvicorn():
+        uvicorn.run(app_web, host="0.0.0.0", port=PORT)
 
-        await application.initialize()
-        await setup()
-        await application.start()
+    threading.Thread(target=start_uvicorn).start()
 
-    asyncio.get_event_loop().create_task(main())
-    uvicorn.run(app_web, host="0.0.0.0", port=PORT)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+    asyncio.run(setup())
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,
+        webhook_url=f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}",
+    )
