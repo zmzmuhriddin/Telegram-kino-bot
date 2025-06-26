@@ -8,8 +8,7 @@ services:
       - key: BOT_TOKEN
         value: 7980560387:AAF54XxLrx1x3gY8OY_0mbArw3IvS5zkxd8
       - key: DATABASE_URL
-        value: postgresql://neondb_owner:npg_tsQvhPb9LHS4@ep-super-forest-a8zk8knc-pooler.eastus2.azure.neon.tech/neondb?sslmode=require&channel_binding=require
-      - key: ADMINS
+        value: postgresql://cinemaxuzbot_user:ZSyahouLAN4rOBUMgBbAiJIS8veFoQCb@dpg-d1eicl7gi27c73elhin0-a.oregon-postgres.render.com/cinemaxuzbot
         value: 5703922034,6764631404
       - key: CHANNEL_USERNAME
         value: @zokirov_muxriddin
