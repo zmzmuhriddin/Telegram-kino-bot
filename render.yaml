@@ -1,9 +1,17 @@
 services:
   - type: web
     name: cinemaxuz-bot
-    runtime: python
+    env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.12
+      - key: BOT_TOKEN
+        value: 7980560387:AAF54XxLrx1x3gY8OY_0mbArw3IvS5zkxd8
+      - key: DATABASE_URL
+        value: postgresql://neondb_owner:npg_tsQvhPb9LHS4@ep-super-forest-a8zk8knc-pooler.eastus2.azure.neon.tech/neondb?sslmode=require&channel_binding=require
+      - key: ADMINS
+        value: 5703922034,6764631404
+      - key: CHANNEL_USERNAME
+        value: @zokirov_muxriddin
+      - key: PORT
+        value: 10000
