@@ -11,27 +11,25 @@ from telegram.ext import (
 )
 import uvicorn
 
-# === YUKLASH ===
+# === Yuklash ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMINS = set(os.getenv("ADMINS", "").split(","))
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 DATABASE_URL = os.getenv("DATABASE_URL")
 RENDER_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 PORT = int(os.getenv("PORT", 10000))
 
-# === DATABASE ===
+# === Database ===
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
 # === FastAPI ===
 app_web = FastAPI()
 
-# === TELEGRAM APP ===
+# === Telegram App ===
 application = Application.builder().token(BOT_TOKEN).build()
 
-
-# === DATABASE JADVALLAR ===
+# === Jadval yaratish ===
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     code TEXT PRIMARY KEY,
@@ -55,8 +53,7 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-
-# === DATABASE FUNKSIYALAR ===
+# === Database funksiyalar ===
 def add_user(user_id, username):
     cursor.execute(
         "INSERT INTO users (user_id, username, last_seen) VALUES (%s, %s, %s) "
@@ -121,16 +118,14 @@ def get_top_movies(limit=10):
     cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
     return cursor.fetchall()
 
-
-# === HOLATLAR ===
+# === Holatlar ===
 adding_movie = {}
 deleting_movie = {}
 broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
-
-# === COMMANDS ===
+# === Command Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -148,7 +143,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-# === CALLBACK ===
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id not in ADMINS:
+        return await update.message.reply_text("🚫 Siz admin emassiz.")
+
+    keyboard = [
+        ["📊 Statistika", "➕ Kino qo‘shish"],
+        ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
+        ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
+        ["📤 Xabar yuborish"]
+    ]
+    await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+
+# === Button Callback ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -201,21 +209,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-# === ADMIN ===
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    if user_id not in ADMINS:
-        return await update.message.reply_text("🚫 Siz admin emassiz.")
-
-    keyboard = [
-        ["📊 Statistika", "➕ Kino qo‘shish"],
-        ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
-        ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
-        ["📤 Xabar yuborish"]
-    ]
-    await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
-
-# === MATN HANDLER ===
+# === Matn Handler ===
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
@@ -301,7 +295,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kino topilmadi.")
 
-# === FILE ID OLISH ===
+# === File ID olish ===
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
@@ -309,8 +303,7 @@ async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Video yuboring.")
 
-
-# === FastAPI ROUTES ===
+# === FastAPI ===
 @app_web.get("/")
 async def home():
     return {"status": "Bot ishlayapti ✅"}
@@ -322,17 +315,19 @@ async def telegram_webhook(req: Request):
     await application.update_queue.put(update)
     return {"status": "ok"}
 
-
-# === WEBHOOK SETUP ===
+# === Webhook setup ===
 async def setup():
     await application.bot.delete_webhook()
     webhook_url = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
 
-
-# === START ===
+# === Run ===
 if __name__ == "__main__":
-    asyncio.run(setup())
+    loop = asyncio.get_event_loop()
+
+    loop.create_task(setup())
+    loop.create_task(application.initialize())
+    loop.create_task(application.start())
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
