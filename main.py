@@ -12,7 +12,6 @@ from telegram.ext import (
 import uvicorn
 import nest_asyncio
 
-
 # === Load environment ===
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -20,20 +19,17 @@ ADMINS = set(os.getenv("ADMINS", "").split(","))
 DATABASE_URL = os.getenv("DATABASE_URL")
 RENDER_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 PORT = int(os.getenv("PORT", 10000))
-
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 # === Database Connection ===
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-
 # === FastAPI App ===
 app_web = FastAPI()
 
-
 # === Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
-
 
 # === Database Tables ===
 cursor.execute("""
@@ -59,7 +55,6 @@ CREATE TABLE IF NOT EXISTS users (
 """)
 conn.commit()
 
-
 # === Database Functions ===
 def add_user(user_id, username):
     cursor.execute(
@@ -69,31 +64,25 @@ def add_user(user_id, username):
     )
     conn.commit()
 
-
 def get_movie(code):
     cursor.execute("SELECT * FROM movies WHERE code = %s", (code,))
     return cursor.fetchone()
-
 
 def search_movies(query):
     cursor.execute("SELECT * FROM movies WHERE title ILIKE %s", (f"%{query}%",))
     return cursor.fetchall()
 
-
 def get_all_movies():
     cursor.execute("SELECT * FROM movies ORDER BY title")
     return cursor.fetchall()
-
 
 def get_movies_by_category(category):
     cursor.execute("SELECT * FROM movies WHERE category = %s", (category,))
     return cursor.fetchall()
 
-
 def get_all_categories():
     cursor.execute("SELECT name FROM categories ORDER BY name")
     return [row[0] for row in cursor.fetchall()]
-
 
 def add_movie(code, file_id, title, category):
     cursor.execute(
@@ -103,41 +92,33 @@ def add_movie(code, file_id, title, category):
     )
     conn.commit()
 
-
 def delete_movie(code):
     cursor.execute("DELETE FROM movies WHERE code = %s", (code,))
     conn.commit()
-
 
 def add_category(name):
     cursor.execute("INSERT INTO categories (name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
     conn.commit()
 
-
 def delete_category(name):
     cursor.execute("DELETE FROM categories WHERE name = %s", (name,))
     conn.commit()
-
 
 def get_user_count():
     cursor.execute("SELECT COUNT(*) FROM users")
     return cursor.fetchone()[0]
 
-
 def get_movie_count():
     cursor.execute("SELECT COUNT(*) FROM movies")
     return cursor.fetchone()[0]
-
 
 def update_movie_views(code):
     cursor.execute("UPDATE movies SET views = views + 1 WHERE code = %s", (code,))
     conn.commit()
 
-
 def get_top_movies(limit=10):
     cursor.execute("SELECT * FROM movies ORDER BY views DESC LIMIT %s", (limit,))
     return cursor.fetchall()
-
 
 # === States ===
 adding_movie = {}
@@ -146,11 +127,28 @@ broadcasting = {}
 adding_category = {}
 deleting_category = {}
 
+# === Obuna tekshirish ===
+async def check_subscription(user_id, context):
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except:
+        return False
 
 # === Telegram Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
+
+    is_subscribed = await check_subscription(user.id, context)
+    if not is_subscribed:
+        return await update.message.reply_text(
+            "❌ Botdan foydalanish uchun kanalimizga obuna bo'ling!\n\n"
+            f"👉 {CHANNEL_ID}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Obuna bo‘ldim", url=f"https://t.me/{CHANNEL_ID.strip('@')}")]
+            ])
+        )
 
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
@@ -165,7 +163,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     )
 
-
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     if user_id not in ADMINS:
@@ -179,10 +176,21 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+
+    is_subscribed = await check_subscription(user_id, context)
+    if not is_subscribed:
+        return await query.message.reply_text(
+            "❌ Avval kanalga obuna bo'ling!\n\n"
+            f"👉 {CHANNEL_ID}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Obuna bo‘ldim", url=f"https://t.me/{CHANNEL_ID.strip('@')}")]
+            ])
+        )
+
     data = query.data
 
     if data == "movies":
@@ -232,11 +240,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
+    is_subscribed = await check_subscription(user_id, context)
+    if not is_subscribed:
+        return await update.message.reply_text(
+            "❌ Botdan foydalanish uchun kanalimizga obuna bo'ling!\n\n"
+            f"👉 {CHANNEL_ID}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Obuna bo‘ldim", url=f"https://t.me/{CHANNEL_ID.strip('@')}")]
+            ])
+        )
+
+    # Admin buyruqlar
     if user_id in ADMINS:
         if adding_movie.get(user_id):
             parts = text.split(";")
@@ -318,14 +336,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kino topilmadi.")
 
-
 async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.video:
         file_id = update.message.video.file_id
         await update.message.reply_text(f"🎬 file_id: <code>{file_id}</code>", parse_mode="HTML")
     else:
         await update.message.reply_text("❌ Video yuboring.")
-
 
 # === FastAPI Routes ===
 @app_web.get("/")
@@ -339,13 +355,11 @@ async def telegram_webhook(req: Request):
     await application.update_queue.put(update)
     return {"status": "ok"}
 
-
 # === Webhook Setup ===
 async def setup():
     await application.bot.delete_webhook()
     webhook_url = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
-
 
 # === Run ===
 if __name__ == "__main__":
