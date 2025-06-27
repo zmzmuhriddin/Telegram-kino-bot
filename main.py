@@ -4,7 +4,9 @@ import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import (
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+)
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
@@ -260,6 +262,34 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id not in ADMINS:
+        return await update.message.reply_text("🚫 Siz admin emassiz.")
+
+    text = update.message.text
+
+    if text == "📊 Statistika":
+        user_count = get_user_count()
+        movie_count = get_movie_count()
+        await update.message.reply_text(
+            f"📊 Statistika:\n\n👥 Foydalanuvchilar: {user_count}\n🎬 Kinolar: {movie_count}"
+        )
+
+    elif text == "📥 Top kinolar":
+        top = get_top_movies()
+        if top:
+            msg = "📥 Top kinolar:\n\n"
+            for i, m in enumerate(top, 1):
+                msg += f"{i}. {m[2]} - {m[4]} marta ko'rilgan\n"
+            await update.message.reply_text(msg)
+        else:
+            await update.message.reply_text("Hozircha top kinolar yo‘q.")
+
+    else:
+        await update.message.reply_text("❌ Bu tugma hali ishlamaydi. Tez orada qo‘shiladi.")
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -338,6 +368,7 @@ if __name__ == "__main__":
         application.add_handler(CommandHandler("admin", admin))
         application.add_handler(CallbackQueryHandler(subscription_check_callback, pattern="^check_sub$"))
         application.add_handler(CallbackQueryHandler(button_handler))
+        application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, admin_panel_handler))
 
         await application.initialize()
         await setup()
