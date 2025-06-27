@@ -81,7 +81,7 @@ async def check_subscription(user_id, context):
     return True
 
 
-async def require_subscription(update, context, is_callback=False):
+async def require_subscription(update, context):
     text = "❌ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling:\n\n"
     buttons = []
 
@@ -110,7 +110,7 @@ async def subscription_check_callback(update: Update, context: ContextTypes.DEFA
         await query.message.reply_text("✅ Obuna tekshirildi. Botdan foydalanishingiz mumkin!")
         return await start(update, context)
     else:
-        return await require_subscription(update, context, is_callback=True)
+        return await require_subscription(update, context)
 
 
 # === Database functions ===
@@ -215,7 +215,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_sub:
         return await require_subscription(update, context)
 
-    await update.message.reply_text(
+    message = update.message if update.message else update.callback_query.message
+
+    await message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
         "🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kategoriya</b> bo‘yicha izlang.\n\n"
         "👇 Quyidagilardan birini tanlang:",
@@ -247,51 +249,53 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     is_sub = await check_subscription(user.id, context)
     if not is_sub:
-        return await require_subscription(update, context, is_callback=True)
+        return await require_subscription(update, context)
 
     query = update.callback_query
     await query.answer()
     data = query.data
 
+    message = query.message
+
     if data == "movies":
         movies = get_all_movies()
         if movies:
             buttons = [[InlineKeyboardButton(m[2], callback_data=f"movie_{m[0]}")] for m in movies]
-            await query.message.reply_text("🎬 Mavjud kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
+            await message.reply_text("🎬 Mavjud kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            await query.message.reply_text("📭 Hozircha kinolar mavjud emas.")
+            await message.reply_text("📭 Hozircha kinolar mavjud emas.")
 
     elif data == "categories":
         categories = get_all_categories()
         if categories:
             buttons = [[InlineKeyboardButton(c, callback_data=f"category_{c}")] for c in categories]
-            await query.message.reply_text("🗂 Kategoriyalar:", reply_markup=InlineKeyboardMarkup(buttons))
+            await message.reply_text("🗂 Kategoriyalar:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            await query.message.reply_text("📭 Kategoriya mavjud emas.")
+            await message.reply_text("📭 Kategoriya mavjud emas.")
 
     elif data.startswith("category_"):
         category = data.split("_", 1)[1]
         movies = get_movies_by_category(category)
         if movies:
             buttons = [[InlineKeyboardButton(m[2], callback_data=f"movie_{m[0]}")] for m in movies]
-            await query.message.reply_text(f"🎬 {category} kategoriyasidagi kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
+            await message.reply_text(f"🎬 {category} kategoriyasidagi kinolar:", reply_markup=InlineKeyboardMarkup(buttons))
         else:
-            await query.message.reply_text(f"📭 {category} kategoriyasida kino yo'q.")
+            await message.reply_text(f"📭 {category} kategoriyasida kino yo'q.")
 
     elif data.startswith("movie_"):
         code = data.split("_", 1)[1]
         movie = get_movie(code)
         if movie:
             update_movie_views(code)
-            await query.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
+            await message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
         else:
-            await query.message.reply_text("❌ Kino topilmadi.")
+            await message.reply_text("❌ Kino topilmadi.")
 
     elif data == "search":
-        await query.message.reply_text("🔎 Kino nomini yoki kodini yuboring.")
+        await message.reply_text("🔎 Kino nomini yoki kodini yuboring.")
 
     elif data == "info":
-        await query.message.reply_text(
+        await message.reply_text(
             "ℹ️ <b>Ma'lumot:</b>\n\n"
             "Bu bot orqali siz turli kinolarni topishingiz va tomosha qilishingiz mumkin.\n"
             "👨‍💻 Dasturchi: @Zokirov_cinemaxuz\n"
@@ -305,6 +309,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
 
+    # === Admin komandalar ===
     if user_id in ADMINS:
         if adding_movie.get(user_id):
             parts = text.split(";")
@@ -394,6 +399,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             broadcasting[user_id] = True
             return await update.message.reply_text("✉️ Xabar matnini yuboring.")
 
+    # === Kino izlash ===
     movie = get_movie(text)
     if movie:
         update_movie_views(text)
