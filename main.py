@@ -4,7 +4,7 @@ import psycopg2
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
@@ -220,18 +220,6 @@ async def subscription_check_callback(update: Update, context: ContextTypes.DEFA
         return await require_subscription(update, context)
 
 
-# === States ===
-adding_movie = {}
-deleting_movie = {}
-broadcasting = {}
-adding_category = {}
-deleting_category = {}
-adding_channel = {}
-deleting_channel = {}
-
-# === Schedule ===
-scheduled_messages = {}
-
 # === Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -264,10 +252,12 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
         ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
         ["➕ Kanal qo‘shish", "🗑 Kanal o‘chirish"],
-        ["📤 Xabar yuborish", "🕑 Rejalashtirish"],
-        ["👥 Foydalanuvchilar", "🔍 Foydalanuvchi"]
+        ["📤 Xabar yuborish"]
     ]
-    await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+    await update.message.reply_text(
+        "👑 Admin panel:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -322,9 +312,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-# === Qo'shimcha handlerlar (reply kino qo'shish, foydalanuvchilar ro'yxati va rejalashtirish) ===
-# Ushbu handlerlar yuqorida sizga yozib bergan qo'shimchalarning to'liq qismi hisoblanadi
-
 # === Webhook va ishga tushirish ===
 @app_web.get("/")
 async def home():
@@ -351,9 +338,6 @@ if __name__ == "__main__":
         application.add_handler(CommandHandler("admin", admin))
         application.add_handler(CallbackQueryHandler(subscription_check_callback, pattern="^check_sub$"))
         application.add_handler(CallbackQueryHandler(button_handler))
-
-        # Qo'shimcha komandalar shu yerda
-        # Yuqorida yozib bergan qo'shimchalarni shu yerga qo'shasiz
 
         await application.initialize()
         await setup()
