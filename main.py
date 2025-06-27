@@ -1,12 +1,14 @@
 import os
 import asyncio
 import psycopg2
+import tempfile
 import matplotlib.pyplot as plt
 from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, InputFile
+    Update, InlineKeyboardButton, InlineKeyboardMarkup,
+    ReplyKeyboardMarkup, InputFile
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -289,7 +291,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ℹ️ <b>Ma'lumot:</b>\n\n"
             "Bu bot orqali siz turli kinolarni topishingiz va tomosha qilishingiz mumkin.\n"
             "👨‍💻 Dasturchi: @Zokirov_cinemaxuz\n"
-            "📅 Versiya: 2.0\n\n"
+            "📅 Versiya: 3.0\n\n"
             "👉 Kino kodini yozing yoki qidiruvdan foydalaning.",
             parse_mode="HTML"
         )
@@ -335,29 +337,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     continue
             return await update.message.reply_text("✅ Xabar yuborildi!")
 
-        if text == "➕ Kino qo‘shish":
-            adding_movie[user_id] = True
-            return await update.message.reply_text("📝 Format: kod;file_id;kino_nomi;kategoriya")
-        elif text == "❌ Kino o‘chirish":
-            deleting_movie[user_id] = True
-            return await update.message.reply_text("🗑 Kino kodini yuboring.")
-        elif text == "🗂 Kategoriya qo‘shish":
-            adding_category[user_id] = True
-            return await update.message.reply_text("➕ Kategoriya nomini yuboring.")
-        elif text == "🗑 Kategoriya o‘chirish":
-            deleting_category[user_id] = True
-            return await update.message.reply_text("❌ O‘chiriladigan kategoriya nomini yuboring.")
-        elif text == "📤 Xabar yuborish":
-            broadcasting[user_id] = True
-            return await update.message.reply_text("✉️ Xabar matnini yuboring.")
-        elif text == "📥 Top kinolar":
+        if text == "📥 Top kinolar":
             movies = get_top_movies()
             message = "🏆 <b>Top 10 ko‘rilgan kinolar:</b>\n\n"
             for m in movies:
                 message += f"🎬 {m[2]} — {m[4]} ta ko‘rish\n"
             await update.message.reply_text(message, parse_mode="HTML")
             return
-        elif text == "📊 Statistika":
+
+        if text == "📊 Statistika":
             users = get_user_count()
             movies = get_movie_count()
             categories = len(get_all_categories())
@@ -369,15 +357,36 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             plt.figure(figsize=(6, 6))
             plt.pie(counts, labels=labels, colors=colors, autopct='%1.1f%%')
             plt.title("Bot statistikasi")
-            plt.savefig("stats.png")
-            plt.close()
+            plt.tight_layout()
 
-            await update.message.reply_photo(photo=InputFile("stats.png"),
-                                             caption=f"👥 Foydalanuvchilar: {users}\n"
-                                                     f"🎥 Kinolar: {movies}\n"
-                                                     f"🗂 Kategoriyalar: {categories}")
-            os.remove("stats.png")
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmpfile:
+                plt.savefig(tmpfile.name)
+                plt.close()
+
+                await update.message.reply_photo(
+                    photo=open(tmpfile.name, 'rb'),
+                    caption=f"👥 Foydalanuvchilar: {users}\n"
+                            f"🎥 Kinolar: {movies}\n"
+                            f"🗂 Kategoriyalar: {categories}"
+                )
+            os.remove(tmpfile.name)
             return
+
+        if text == "➕ Kino qo‘shish":
+            adding_movie[user_id] = True
+            return await update.message.reply_text("📝 Format: kod;file_id;kino_nomi;kategoriya")
+        if text == "❌ Kino o‘chirish":
+            deleting_movie[user_id] = True
+            return await update.message.reply_text("🗑 Kino kodini yuboring.")
+        if text == "🗂 Kategoriya qo‘shish":
+            adding_category[user_id] = True
+            return await update.message.reply_text("➕ Kategoriya nomini yuboring.")
+        if text == "🗑 Kategoriya o‘chirish":
+            deleting_category[user_id] = True
+            return await update.message.reply_text("❌ O‘chiriladigan kategoriya nomini yuboring.")
+        if text == "📤 Xabar yuborish":
+            broadcasting[user_id] = True
+            return await update.message.reply_text("✉️ Xabar matnini yuboring.")
 
     movie = get_movie(text)
     if movie:
