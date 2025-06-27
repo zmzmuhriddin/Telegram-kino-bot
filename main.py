@@ -72,7 +72,9 @@ async def check_subscription(user_id, context):
     for channel in CHANNELS:
         try:
             chat_member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
-            if chat_member.status not in ["member", "administrator", "creator"]:
+            if chat_member.status in ["member", "administrator", "creator"]:
+                continue
+            else:
                 return False
         except:
             return False
@@ -90,16 +92,12 @@ async def require_subscription(update, context, is_callback=False):
 
     buttons.append([InlineKeyboardButton("✅ Obuna bo‘ldim", callback_data="check_sub")])
 
-    if is_callback:
-        await update.message.reply_text(
-            text, parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    else:
-        await update.reply_text(
-            text, parse_mode="HTML", disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+    message = update.message if update.message else update.callback_query.message
+
+    await message.reply_text(
+        text, parse_mode="HTML", disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
 async def subscription_check_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,7 +110,7 @@ async def subscription_check_callback(update: Update, context: ContextTypes.DEFA
         await query.message.reply_text("✅ Obuna tekshirildi. Botdan foydalanishingiz mumkin!")
         return await start(update, context)
     else:
-        return await require_subscription(query, context, is_callback=True)
+        return await require_subscription(update, context, is_callback=True)
 
 
 # === Database functions ===
