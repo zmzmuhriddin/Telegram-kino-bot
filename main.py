@@ -3,12 +3,12 @@ import asyncio
 import psycopg2
 import tempfile
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, date
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, InputFile
+    ReplyKeyboardMarkup
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -36,7 +36,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
     username TEXT,
-    last_seen TIMESTAMP
+    last_seen TIMESTAMP,
+    join_date DATE
 );
 """)
 cursor.execute("""
@@ -117,12 +118,17 @@ async def subscription_check_callback(update: Update, context: ContextTypes.DEFA
 # === Database functions ===
 def add_user(user_id, username):
     cursor.execute("""
-        INSERT INTO users (user_id, username, last_seen) 
-        VALUES (%s, %s, %s)
+        INSERT INTO users (user_id, username, last_seen, join_date) 
+        VALUES (%s, %s, %s, %s)
         ON CONFLICT (user_id) 
         DO UPDATE SET username = EXCLUDED.username, last_seen = EXCLUDED.last_seen
-    """, (user_id, username, datetime.utcnow()))
+    """, (user_id, username, datetime.utcnow(), date.today()))
     conn.commit()
+
+
+def get_today_users():
+    cursor.execute("SELECT COUNT(*) FROM users WHERE join_date = %s", (date.today(),))
+    return cursor.fetchone()[0]
 
 
 def get_movie(code):
@@ -347,14 +353,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if text == "📊 Statistika":
             users = get_user_count()
+            today_users = get_today_users()
             movies = get_movie_count()
             categories = len(get_all_categories())
 
-            labels = ['Foydalanuvchilar', 'Kinolar', 'Kategoriyalar']
-            counts = [users, movies, categories]
-            colors = ['#FF6384', '#36A2EB', '#FFCE56']
+            labels = ['Foydalanuvchilar', 'Bugun yangi', 'Kinolar', 'Kategoriyalar']
+            counts = [users, today_users, movies, categories]
+            colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']
 
-            plt.figure(figsize=(6, 6))
+            plt.figure(figsize=(7, 7))
             plt.pie(counts, labels=labels, colors=colors, autopct='%1.1f%%')
             plt.title("Bot statistikasi")
             plt.tight_layout()
@@ -365,7 +372,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await update.message.reply_photo(
                     photo=open(tmpfile.name, 'rb'),
-                    caption=f"👥 Foydalanuvchilar: {users}\n"
+                    caption=f"👥 Umumiy foydalanuvchilar: {users}\n"
+                            f"🆕 Bugun qo'shilganlar: {today_users}\n"
                             f"🎥 Kinolar: {movies}\n"
                             f"🗂 Kategoriyalar: {categories}"
                 )
