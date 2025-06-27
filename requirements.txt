@@ -3,5 +3,5 @@ fastapi==0.110.0
 uvicorn==0.27.1
 python-dotenv==1.0.1
 psycopg2-binary==2.9.9
-nest_asyncio
-matplotlib
+nest_asyncio==1.6.0
+matplotlib==3.8.4
