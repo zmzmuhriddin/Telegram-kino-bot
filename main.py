@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS users (
     last_seen TIMESTAMP
 );
 """)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS channels (
+    username TEXT PRIMARY KEY
+);
+""")
 conn.commit()
 
 
@@ -139,18 +144,100 @@ def get_top_movies(limit=10):
     return cursor.fetchall()
 
 
+def get_channels():
+    cursor.execute("SELECT username FROM channels")
+    return [row[0] for row in cursor.fetchall()]
+
+
+def add_channel(username):
+    cursor.execute(
+        "INSERT INTO channels (username) VALUES (%s) ON CONFLICT DO NOTHING",
+        (username,)
+    )
+    conn.commit()
+
+
+def delete_channel(username):
+    cursor.execute("DELETE FROM channels WHERE username = %s", (username,))
+    conn.commit()
+
+
+# === Subscription Check ===
+async def check_subscription(user_id, context):
+    if str(user_id) in ADMINS:
+        return True
+
+    channels = get_channels()
+    if not channels:
+        return True  # Agar kanal qo'shilmagan bo'lsa tekshirmaydi
+
+    for channel in channels:
+        try:
+            chat_member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if chat_member.status in ["member", "administrator", "creator"]:
+                continue
+            else:
+                return False
+        except:
+            return False
+    return True
+
+
+async def require_subscription(update, context):
+    channels = get_channels()
+
+    if not channels:
+        return await update.message.reply_text("❌ Obuna bo‘lish uchun kanal belgilanmagan.")
+
+    text = "❌ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling:\n\n"
+    buttons = []
+
+    for channel in channels:
+        username = channel.strip().replace("@", "")
+        text += f"👉 <a href='https://t.me/{username}'>@{username}</a>\n"
+        buttons.append([InlineKeyboardButton(f"📢 {username}", url=f"https://t.me/{username}")])
+
+    buttons.append([InlineKeyboardButton("✅ Obuna bo‘ldim", callback_data="check_sub")])
+
+    message = update.message if update.message else update.callback_query.message
+
+    await message.reply_text(
+        text, parse_mode="HTML", disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def subscription_check_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+
+    is_sub = await check_subscription(user_id, context)
+    if is_sub:
+        await query.message.reply_text("✅ Obuna tekshirildi. Botdan foydalanishingiz mumkin!")
+        return await start(update, context)
+    else:
+        return await require_subscription(update, context)
+
+
 # === States ===
 adding_movie = {}
 deleting_movie = {}
 broadcasting = {}
 adding_category = {}
 deleting_category = {}
+adding_channel = {}
+deleting_channel = {}
 
 
 # === Telegram Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
+
+    is_sub = await check_subscription(user.id, context)
+    if not is_sub:
+        return await require_subscription(update, context)
 
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
@@ -175,6 +262,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["📊 Statistika", "➕ Kino qo‘shish"],
         ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
         ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
+        ["➕ Kanal qo‘shish", "🗑 Kanal o‘chirish"],
         ["📤 Xabar yuborish"]
     ]
     await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
@@ -227,7 +315,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ℹ️ <b>Ma'lumot:</b>\n\n"
             "Bu bot orqali siz turli kinolarni topishingiz va tomosha qilishingiz mumkin.\n"
             "👨‍💻 Dasturchi: @Zokirov_cinemaxuz\n"
-            "📅 Versiya: 1.0\n\n"
+            "📅 Versiya: 3.0\n\n"
             "👉 Kino kodini yozing yoki qidiruvdan foydalaning.",
             parse_mode="HTML"
         )
@@ -263,6 +351,16 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             deleting_category[user_id] = False
             return await update.message.reply_text(f"❌ Kategoriya o‘chirildi: {text}")
 
+        if adding_channel.get(user_id):
+            add_channel(text)
+            adding_channel[user_id] = False
+            return await update.message.reply_text(f"✅ Kanal qo‘shildi: {text}")
+
+        if deleting_channel.get(user_id):
+            delete_channel(text)
+            deleting_channel[user_id] = False
+            return await update.message.reply_text(f"❌ Kanal o‘chirildi: {text}")
+
         if broadcasting.get(user_id):
             broadcasting[user_id] = False
             cursor.execute("SELECT user_id FROM users")
@@ -285,9 +383,12 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "🗑 Kategoriya o‘chirish":
             deleting_category[user_id] = True
             return await update.message.reply_text("❌ O‘chiriladigan kategoriya nomini yuboring.")
-        elif text == "📤 Xabar yuborish":
-            broadcasting[user_id] = True
-            return await update.message.reply_text("✉️ Xabar matnini yuboring.")
+        elif text == "➕ Kanal qo‘shish":
+            adding_channel[user_id] = True
+            return await update.message.reply_text("🆕 Kanal username'ini yuboring. Masalan: @kanalnomi")
+        elif text == "🗑 Kanal o‘chirish":
+            deleting_channel[user_id] = True
+            return await update.message.reply_text("❌ O‘chiriladigan kanal username'ini yuboring.")
         elif text == "📥 Top kinolar":
             movies = get_top_movies()
             message = "🏆 <b>Top 10 ko‘rilgan kinolar:</b>\n\n"
@@ -354,6 +455,7 @@ if __name__ == "__main__":
     async def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("admin", admin))
+        application.add_handler(CallbackQueryHandler(subscription_check_callback, pattern="^check_sub$"))
         application.add_handler(CallbackQueryHandler(button_handler))
         application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
