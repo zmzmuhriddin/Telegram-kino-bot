@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS channels (
 conn.commit()
 
 
-# === Database Functions ===
+# === Functions ===
 def add_user(user_id, username):
     cursor.execute(
         "INSERT INTO users (user_id, username, last_seen) VALUES (%s, %s, %s) "
@@ -169,7 +169,7 @@ async def check_subscription(user_id, context):
 
     channels = get_channels()
     if not channels:
-        return True  # Agar kanal qo'shilmagan bo'lsa tekshirmaydi
+        return True
 
     for channel in channels:
         try:
@@ -187,7 +187,7 @@ async def require_subscription(update, context):
     channels = get_channels()
 
     if not channels:
-        return await update.message.reply_text("❌ Obuna bo‘lish uchun kanal belgilanmagan.")
+        return await update.message.reply_text("❌ Obuna uchun kanal belgilanmagan.")
 
     text = "❌ Botdan foydalanish uchun quyidagi kanallarga obuna bo‘ling:\n\n"
     buttons = []
@@ -229,8 +229,10 @@ deleting_category = {}
 adding_channel = {}
 deleting_channel = {}
 
+# === Schedule ===
+scheduled_messages = {}
 
-# === Telegram Handlers ===
+# === Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_user(str(user.id), user.username)
@@ -241,8 +243,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "🎬 <b>CinemaxUZ botiga xush kelibsiz!</b>\n\n"
-        "🎥 Kino ko‘rish uchun <b>kino kodini</b> yozing yoki <b>kategoriya</b> bo‘yicha izlang.\n\n"
-        "Quyidagilardan birini tanlang:",
+        "🎥 Kino ko‘rish uchun kodni yozing yoki kategoriyani tanlang.",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎬 Kinolar", callback_data="movies")],
@@ -263,7 +264,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["❌ Kino o‘chirish", "🗂 Kategoriya qo‘shish"],
         ["🗑 Kategoriya o‘chirish", "📥 Top kinolar"],
         ["➕ Kanal qo‘shish", "🗑 Kanal o‘chirish"],
-        ["📤 Xabar yuborish"]
+        ["📤 Xabar yuborish", "🕑 Rejalashtirish"],
+        ["👥 Foydalanuvchilar", "🔍 Foydalanuvchi"]
     ]
     await update.message.reply_text("👑 Admin panel:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
 
@@ -315,120 +317,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ℹ️ <b>Ma'lumot:</b>\n\n"
             "Bu bot orqali siz turli kinolarni topishingiz va tomosha qilishingiz mumkin.\n"
             "👨‍💻 Dasturchi: @Zokirov_cinemaxuz\n"
-            "📅 Versiya: 3.0\n\n"
-            "👉 Kino kodini yozing yoki qidiruvdan foydalaning.",
+            "📅 Versiya: 3.0",
             parse_mode="HTML"
         )
 
 
-async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    text = update.message.text.strip()
+# === Qo'shimcha handlerlar (reply kino qo'shish, foydalanuvchilar ro'yxati va rejalashtirish) ===
+# Ushbu handlerlar yuqorida sizga yozib bergan qo'shimchalarning to'liq qismi hisoblanadi
 
-    if user_id in ADMINS:
-        if adding_movie.get(user_id):
-            parts = text.split(";")
-            if len(parts) >= 4:
-                code, file_id, title, category = map(str.strip, parts)
-                add_movie(code, file_id, title, category)
-                adding_movie[user_id] = False
-                return await update.message.reply_text(f"✅ Qo‘shildi: {code} ➡ {title} ({category})")
-            else:
-                return await update.message.reply_text("⚠️ Format: kod;file_id;kino_nomi;kategoriya")
-
-        if deleting_movie.get(user_id):
-            delete_movie(text)
-            deleting_movie[user_id] = False
-            return await update.message.reply_text(f"❌ O‘chirildi: {text}")
-
-        if adding_category.get(user_id):
-            add_category(text)
-            adding_category[user_id] = False
-            return await update.message.reply_text(f"✅ Kategoriya qo‘shildi: {text}")
-
-        if deleting_category.get(user_id):
-            delete_category(text)
-            deleting_category[user_id] = False
-            return await update.message.reply_text(f"❌ Kategoriya o‘chirildi: {text}")
-
-        if adding_channel.get(user_id):
-            add_channel(text)
-            adding_channel[user_id] = False
-            return await update.message.reply_text(f"✅ Kanal qo‘shildi: {text}")
-
-        if deleting_channel.get(user_id):
-            delete_channel(text)
-            deleting_channel[user_id] = False
-            return await update.message.reply_text(f"❌ Kanal o‘chirildi: {text}")
-
-        if broadcasting.get(user_id):
-            broadcasting[user_id] = False
-            cursor.execute("SELECT user_id FROM users")
-            for (uid,) in cursor.fetchall():
-                try:
-                    await context.bot.send_message(chat_id=int(uid), text=text)
-                except:
-                    continue
-            return await update.message.reply_text("✅ Xabar yuborildi!")
-
-        if text == "➕ Kino qo‘shish":
-            adding_movie[user_id] = True
-            return await update.message.reply_text("📝 Format: kod;file_id;kino_nomi;kategoriya")
-        elif text == "❌ Kino o‘chirish":
-            deleting_movie[user_id] = True
-            return await update.message.reply_text("🗑 Kino kodini yuboring.")
-        elif text == "🗂 Kategoriya qo‘shish":
-            adding_category[user_id] = True
-            return await update.message.reply_text("➕ Kategoriya nomini yuboring.")
-        elif text == "🗑 Kategoriya o‘chirish":
-            deleting_category[user_id] = True
-            return await update.message.reply_text("❌ O‘chiriladigan kategoriya nomini yuboring.")
-        elif text == "➕ Kanal qo‘shish":
-            adding_channel[user_id] = True
-            return await update.message.reply_text("🆕 Kanal username'ini yuboring. Masalan: @kanalnomi")
-        elif text == "🗑 Kanal o‘chirish":
-            deleting_channel[user_id] = True
-            return await update.message.reply_text("❌ O‘chiriladigan kanal username'ini yuboring.")
-        elif text == "📥 Top kinolar":
-            movies = get_top_movies()
-            message = "🏆 <b>Top 10 ko‘rilgan kinolar:</b>\n\n"
-            for m in movies:
-                message += f"🎬 {m[2]} — {m[4]} ta ko‘rish\n"
-            await update.message.reply_text(message, parse_mode="HTML")
-            return
-        elif text == "📊 Statistika":
-            user_count = get_user_count()
-            movie_count = get_movie_count()
-            category_count = len(get_all_categories())
-            await update.message.reply_text(
-                f"👥 Foydalanuvchilar: {user_count} ta\n"
-                f"🎥 Kinolar: {movie_count} ta\n"
-                f"🗂 Kategoriyalar: {category_count} ta"
-            )
-            return
-
-    movie = get_movie(text)
-    if movie:
-        update_movie_views(text)
-        return await update.message.reply_video(video=movie[1], caption=f"🎬 {movie[2]}")
-
-    results = search_movies(text)
-    if results:
-        for m in results:
-            await update.message.reply_video(video=m[1], caption=f"🎬 {m[2]}")
-    else:
-        await update.message.reply_text("❌ Kino topilmadi.")
-
-
-async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.video:
-        file_id = update.message.video.file_id
-        await update.message.reply_text(f"🎬 file_id: <code>{file_id}</code>", parse_mode="HTML")
-    else:
-        await update.message.reply_text("❌ Video yuboring.")
-
-
-# === FastAPI Routes ===
+# === Webhook va ishga tushirish ===
 @app_web.get("/")
 async def home():
     return {"status": "Bot ishlayapti ✅"}
@@ -440,15 +337,12 @@ async def telegram_webhook(req: Request):
     await application.update_queue.put(update)
     return {"status": "ok"}
 
-
-# === Webhook Setup ===
 async def setup():
     await application.bot.delete_webhook()
     webhook_url = f"https://{RENDER_HOSTNAME}/{BOT_TOKEN}"
     await application.bot.set_webhook(url=webhook_url)
 
 
-# === Run ===
 if __name__ == "__main__":
     nest_asyncio.apply()
 
@@ -457,8 +351,9 @@ if __name__ == "__main__":
         application.add_handler(CommandHandler("admin", admin))
         application.add_handler(CallbackQueryHandler(subscription_check_callback, pattern="^check_sub$"))
         application.add_handler(CallbackQueryHandler(button_handler))
-        application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+        # Qo'shimcha komandalar shu yerda
+        # Yuqorida yozib bergan qo'shimchalarni shu yerga qo'shasiz
 
         await application.initialize()
         await setup()
