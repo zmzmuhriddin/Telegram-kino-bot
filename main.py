@@ -306,8 +306,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
+    user = update.effective_user
+    user_id = str(user.id)
     text = update.message.text.strip()
+
+    # === Obuna tekshirish ===
+    is_sub = await check_subscription(user_id, context)
+    if not is_sub:
+        return await require_subscription(update, context)
+
+    # === Foydalanuvchini qo'shish ===
+    add_user(user_id, user.username)
 
     # === Admin komandalar ===
     if user_id in ADMINS:
@@ -448,8 +457,8 @@ if __name__ == "__main__":
     async def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("admin", admin))
-        application.add_handler(CallbackQueryHandler(button_handler))
         application.add_handler(CallbackQueryHandler(subscription_check_callback, pattern="^check_sub$"))
+        application.add_handler(CallbackQueryHandler(button_handler))
         application.add_handler(MessageHandler(filters.VIDEO, get_file_id))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
