@@ -11,9 +11,9 @@ from telegram.ext import (
 )
 import uvicorn
 import nest_asyncio
-import yt_dlp import YoutubeDL
-import tempfile
 import re
+import tempfile
+from yt_dlp import YoutubeDL
 
 # === Load environment ===
 load_dotenv()
