@@ -11,7 +11,9 @@ from telegram.ext import (
 )
 import uvicorn
 import nest_asyncio
-
+import yt_dlp import YoutubeDL
+import tempfile
+import re
 
 # === Load environment ===
 load_dotenv()
@@ -324,7 +326,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     text = update.message.text.strip()
+# === Internetdan video yuklash (URL orqali) ===
+    if re.match(r'^https?://', text):
+        await update.message.reply_text("⏬ Kino yuklanmoqda, kuting...")
 
+        try:
+            ydl_opts = {
+                'format': 'bestvideo+bestaudio/best',
+                'outtmpl': os.path.join(tempfile.gettempdir(), '%(title).40s.%(ext)s'),
+                'quiet': True,
+                'noplaylist': True,
+            }
+
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(text, download=True)
+                title = info.get("title", "Kino")
+                filename = ydl.prepare_filename(info)
+
+            with open(filename, "rb") as video_file:
+                await update.message.reply_video(video=video_file, caption=f"🎬 {title}")
+
+            os.remove(filename)
+
+        except Exception as e:
+            await update.message.reply_text(f"❌ Yuklab bo‘lmadi: {e}")
+        return
+        
     if user_id in ADMINS:
         if adding_movie.get(user_id):
             parts = text.split(";")
