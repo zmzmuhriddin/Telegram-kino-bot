@@ -494,3 +494,4 @@ if __name__ == "__main__":
 
     asyncio.get_event_loop().create_task(main())
     uvicorn.run(app_web, host="0.0.0.0", port=PORT)
+    
